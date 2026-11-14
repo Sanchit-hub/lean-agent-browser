@@ -31,6 +31,7 @@ from pathlib import Path
 
 from evals.fixtures.server import serve
 from evals.runner import CONFIG, PWMCP_CLI, RESUME, SYSTEM, RunResult, _chromium_executable, _free_port, _state
+from evals.live_tasks import LIVE_TASKS
 from evals.tasks import BY_ID, QUICK, TASKS
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -73,7 +74,8 @@ def run_one(base: str, task, mode: str, run: int, tmp: Path, log_dir: Path) -> R
     # to its cwd by default; lean uses allowed_upload_dirs), so the resume is copied there for both.
     resume = tmp.resolve() / "resume.pdf"
     shutil.copy(RESUME, resume)
-    prompt = (f"Goal: {task.goal}\n\nStart page: {base}{task.start} (open it first).\n"
+    start = task.start if task.start.startswith("http") else base + task.start
+    prompt = (f"Goal: {task.goal}\n\nStart page: {start} (open it first).\n"
               f"files: resume = {resume}\n\nWhen the goal is complete, end with the line: FINAL: <answer or done>")
     env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}  # use the subscription login
     cmd = [CLAUDE, "-p", prompt, "--output-format", "json", "--model", MODEL, "--tools", "",
@@ -113,15 +115,27 @@ def main():
     ap.add_argument("--tasks")
     ap.add_argument("--runs", type=int, default=1)
     ap.add_argument("--quick", action="store_true")
+    ap.add_argument("--suite", choices=["fixtures", "live"], default="fixtures",
+                    help="live = public pages, answer-verified, reported separately")
     a = ap.parse_args()
     modes = a.modes.split(",")
-    tasks = [BY_ID[t] for t in (QUICK if a.quick else (a.tasks.split(",") if a.tasks else [t.id for t in TASKS]))]
-    out_dir = ROOT / "evals/results" / (datetime.now().strftime("%Y%m%d-%H%M%S") + "-claude-cli")
+    if a.suite == "live":
+        pool = {t.id: t for t in LIVE_TASKS}
+        tasks = [pool[t] for t in a.tasks.split(",")] if a.tasks else list(LIVE_TASKS)
+    else:
+        tasks = [BY_ID[t] for t in (QUICK if a.quick else (a.tasks.split(",") if a.tasks else [t.id for t in TASKS]))]
+    out_dir = ROOT / "evals/results" / (datetime.now().strftime("%Y%m%d-%H%M%S") + "-claude-cli" + ("-live" if a.suite == "live" else ""))
     log_dir = out_dir / "transcripts"
     log_dir.mkdir(parents=True)
     (out_dir / "meta.json").write_text(json.dumps({
         "config": {**CONFIG, "model": f"{CONFIG['model']} via claude -p"}, "modes": modes,
-        "tasks": [t.id for t in tasks], "runs": a.runs, "cached": True, "driver": "claude-cli"}, indent=2))
+        "tasks": [t.id for t in tasks], "runs": a.runs, "cached": True, "driver": "claude-cli", "suite": a.suite}, indent=2))
+    # Refuse to run with a missing MCP server: claude -p would silently run without browsing tools and the
+    # agent would answer from memory, which produces invalid results (this happened once on 2026-11-15).
+    need = {"lean": ROOT / ".venv/bin/leanb", "playwright-mcp": PWMCP_CLI, "agent-browser": AGENT_BROWSER}
+    missing = [f"{m}: {need[m]}" for m in modes if m in need and not need[m].exists()]
+    if missing:
+        raise SystemExit("missing MCP server(s), run ./install.sh --with-eval:\n  " + "\n  ".join(missing))
     port = _free_port()
     srv = serve(port)
     base = f"http://127.0.0.1:{port}"

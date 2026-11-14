@@ -151,6 +151,8 @@ def cmd_bench(a) -> int:
     args += ["--modes", modes]
     if a.tasks:
         args += ["--tasks", a.tasks]
+    if getattr(a, "suite", "fixtures") == "live" and a.agent == "claude-cli":
+        args += ["--suite", "live"]
     if a.agent == "api":
         args.append("-y")
     return subprocess.call(args, cwd=root)
@@ -183,6 +185,7 @@ def main(argv=None):
     p.add_argument("--runs", type=int, default=3)
     p.add_argument("--modes", default=None, help="comma-separated; default: playwright-mcp,lean")
     p.add_argument("--tasks", default=None, help="comma-separated task ids")
+    p.add_argument("--suite", choices=["fixtures", "live"], default="fixtures", help="live: public pages (claude-cli agent)")
     a = ap.parse_args(argv)
     if a.cmd == "open":
         asyncio.run(cmd_open(a))
