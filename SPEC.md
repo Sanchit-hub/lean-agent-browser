@@ -361,9 +361,10 @@ prose. The README holds the long documentation.
   SDK 2.3.0, stdio, low-level `Server`, so the schemas carry no auto-generated titles) in
   `lean_browser/mcp_server.py`, and the CLI in `lean_browser/cli.py`. `extract` is in
   `lean_browser/extract.js`.
-- **Schema size, tiktoken proxy:** all 6 tools ≈ **515 tokens**. A test keeps it ≤ 800 with a
-  25% margin. For comparison, the baseline modes' tools are 443 (screenshot), 553 (html) and
-  636 (aria). Exact counts come from `leanb-eval --schema-tokens` once an API key is set.
+- **Schema size:** measured with `claude -p`, now with 7 tools (memory was added), the definitions cost
+  **~1,550 real Claude tokens** per request, against Playwright MCP ~7,100 and agent-browser ~31,600.
+  The tiktoken proxy reads 663 for the same text, so the proxy undercounts JSON schemas by about 2.3×.
+  The test now keeps the proxy ≤ 700.
 - **CLI:** `leanb open <url>`, `leanb shell <url>` and `leanb mcp`. This deviates from the plan:
   instead of separate stateful `leanb act …` commands (which would need a background daemon),
   `shell` is an interactive session with `act`, `fill`, `snapshot`, `find`, `expand`, `more`,

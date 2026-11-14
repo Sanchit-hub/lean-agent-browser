@@ -102,7 +102,7 @@ To also install the Playwright MCP baseline used by the evals (needs Node.js 20 
 claude mcp add lean-browser -- "$PWD/.venv/bin/leanb" mcp
 ```
 
-There are six tools. Their definitions add up to about 515 tokens, and they are sent with every request:
+There are seven tools. Claude counts their definitions at about 1.5k tokens, and they are sent with every request (Playwright MCP's come to ~7.1k, agent-browser's default profile to ~31.6k; measured with `claude -p`, see `evals/CHANGELOG.md`):
 
 | Tool | What it does |
 |---|---|

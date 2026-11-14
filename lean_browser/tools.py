@@ -24,26 +24,30 @@ ACTIONS = ["click", "fill", "select", "check", "uncheck", "clear", "press", "hov
 MODES = ["minimal", "actions", "read", "full"]
 
 TOOLS: list[dict] = [
-    {"name": "open", "description": "Open a URL; returns a compact page snapshot with element ids.",
+    {"name": "open", "description": "Open URL; returns snapshot with element ids.",
      "input_schema": {"type": "object", "properties": {"url": {"type": "string"}, "mode": {"enum": MODES},
                                                        "block": {"type": "boolean"}}, "required": ["url"]}},
-    {"name": "snapshot", "description": "Current page. expand/more take handles; find searches all text; within=id scopes to that element's form/table/section.",
+    {"name": "snapshot", "description": "Current page. expand/more: handles; find: search; within: id's form/table/section.",
      "input_schema": {"type": "object", "properties": {"mode": {"enum": MODES}, "budget": {"type": "integer"},
                                                        "expand": {"type": "string"}, "more": {"type": "string"},
                                                        "find": {"type": "string"}, "within": {"type": "integer"}}}},
-    {"name": "act", "description": "Act on element id; returns only what changed. select takes an option label; "
-                                   "press a key; tab: list|new:URL|switch:N|close:N; dialog: accept|dismiss (next dialog).",
+    {"name": "act", "description": "Act on id; returns status + changes. select: option label; tab: list|new:URL|switch:N|close:N; "
+                                   "dialog: accept|dismiss next.",
      "input_schema": {"type": "object", "properties": {"action": {"enum": ACTIONS}, "id": {"type": "integer"},
                                                        "value": {"type": "string"}}, "required": ["action"]}},
-    {"name": "fill_form", "description": "Fill many fields at once ({id: value}); submit=true clicks the form's submit button.",
+    {"name": "fill_form", "description": "Fill {id: value} fields; submit=true submits the form.",
      "input_schema": {"type": "object", "properties": {"fields": {"type": "object", "additionalProperties": {"type": "string"}},
                                                        "submit": {"type": ["boolean", "integer"]}}, "required": ["fields"]}},
-    {"name": "extract", "description": "JSON of a table, list or form, with source URL and row ids. fields picks columns; new_only skips rows already returned.",
+    {"name": "extract", "description": "JSON of a table/list/form with source and row ids. fields: columns; new_only: skip rows seen.",
      "input_schema": {"type": "object", "properties": {"kind": {"enum": ["auto", "table", "list", "form"]},
                                                        "within": {"type": "integer"},
                                                        "fields": {"type": "array", "items": {"type": "string"}},
                                                        "new_only": {"type": "boolean"}}}},
-    {"name": "screenshot", "description": "PNG of the viewport or one element; annotate=true labels elements with their ids. Only for captchas, charts or layout.",
+    {"name": "memory", "description": "Notes kept across pages (source URL added): set, get, list, delete, clear.",
+     "input_schema": {"type": "object", "properties": {"action": {"enum": ["set", "get", "list", "delete", "clear"]},
+                                                       "key": {"type": "string"}, "value": {"type": "string"}},
+                      "required": ["action"]}},
+    {"name": "screenshot", "description": "PNG of viewport or element; annotate labels ids. Visual cases only.",
      "input_schema": {"type": "object", "properties": {"id": {"type": "integer"}, "annotate": {"type": "boolean"}}}},
 ]
 TOOL_NAMES = {t["name"] for t in TOOLS}
@@ -104,6 +108,8 @@ class LeanBrowser:
                                  block=c.block)
         self.session = Session(self.bm, upload_dirs=c.allowed_upload_dirs, snapshot_timeout_s=c.snapshot_timeout_s,
                                confirm_risky=c.confirm_risky)
+        # Session memory: in-process only, never written to disk, gone when the browser closes.
+        self.memory: dict[str, dict] = {}
         import os
         self.tracer = None
         if c.trace or os.environ.get("LEANB_TRACE"):
@@ -158,6 +164,48 @@ class LeanBrowser:
         if png is None:
             raise LeanBrowserError(next((p for p in parts if isinstance(p, str)), "no image")[len("Error: "):])
         return png
+
+    MEMORY_MAX_KEYS = 200
+    MEMORY_MAX_VALUE = 2000
+
+    def _memory(self, args: dict) -> str:
+        import time
+        action, key, value = args.get("action"), args.get("key"), args.get("value")
+        if action == "set":
+            if not key or value is None:
+                raise ActionError("memory set needs key and value")
+            if key not in self.memory and len(self.memory) >= self.MEMORY_MAX_KEYS:
+                raise ActionError(f"memory is full ({self.MEMORY_MAX_KEYS} keys); delete some first")
+            s = self.session
+            src = {"url": s.cur.page.url, "title": ""} if s.active >= 0 else {"url": None, "title": ""}
+            if s.active >= 0 and s.cur.snapper.last:
+                src["title"] = s.cur.snapper.last.data.get("title", "")
+            self.memory[key] = {"value": str(value)[: self.MEMORY_MAX_VALUE], "source": src, "at": round(time.time())}
+            return f"remembered {key!r} (from {src['url'] or 'no page'})"
+        if action == "get":
+            m = self.memory.get(key or "")
+            if not m:
+                raise ActionError(f"no memory {key!r}; keys: {', '.join(self.memory) or 'none'}")
+            return json.dumps({key: m}, ensure_ascii=False)
+        if action == "list":
+            if not self.memory:
+                return "memory is empty"
+            return "\n".join(f"{k} = {m['value'][:120]}   [{m['source']['url']}]" for k, m in self.memory.items())
+        if action == "delete":
+            return f"deleted {key!r}" if self.memory.pop(key or "", None) is not None else f"no memory {key!r}"
+        if action == "clear":
+            n = len(self.memory)
+            self.memory.clear()
+            return f"cleared {n} memories"
+        raise ActionError("memory action must be set, get, list, delete or clear")
+
+    async def remember(self, key: str, value: str) -> str:
+        return await self._text("memory", {"action": "set", "key": key, "value": value})
+
+    async def recall(self, key: str | None = None):
+        if key is None:
+            return dict(self.memory)
+        return json.loads(await self._text("memory", {"action": "get", "key": key}))[key]
 
     def _check_domain(self, url: str):
         if not self.config.allowed_domains:
@@ -214,6 +262,8 @@ class LeanBrowser:
                 data = await s.extract(args.get("kind", "auto"), args.get("within"), args.get("fields"),
                                        bool(args.get("new_only", False)))
                 return [wrap_untrusted(json.dumps(data, ensure_ascii=False))]
+            if name == "memory":
+                return [self._memory(args)]
             if name == "screenshot":
                 png = await s.screenshot(args.get("id"), bool(args.get("annotate", False)))
                 if self.bm.block and s.cur.tab.engine == "chromium":

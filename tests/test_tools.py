@@ -35,10 +35,12 @@ def state(base):
 
 
 def test_tool_schema_budget():
-    # Proxy count (tiktoken); Claude's tokenizer runs ~10-20% higher, so keep a margin under 800.
+    # Proxy count (tiktoken o200k). Measured 2026-11-15 with claude -p: 663 proxy tokens = ~1,550 real
+    # Claude tokens of tool definitions per request (Playwright MCP ~7,100; agent-browser ~31,600).
+    # Keep the proxy under 700 so the real cost stays around 1.6k.
     n = len(tiktoken.get_encoding("o200k_base").encode(json.dumps(TOOLS)))
-    assert len(TOOLS) == 6
-    assert n * 1.25 <= 800, f"tool schemas ≈ {n} tokens (x1.25 = {n * 1.25:.0f})"
+    assert len(TOOLS) == 7
+    assert n <= 700, f"tool schemas ≈ {n} proxy tokens (budget 700 ≈ 1.6k real Claude tokens)"
 
 
 @pytest.fixture
@@ -99,7 +101,7 @@ async def test_mcp_stdio_round_trip(base):
         async with ClientSession(r, w) as cs:
             await cs.initialize()
             tools = await cs.list_tools()
-            assert sorted(t.name for t in tools.tools) == ["act", "extract", "fill_form", "open", "screenshot", "snapshot"]
+            assert sorted(t.name for t in tools.tools) == ["act", "extract", "fill_form", "memory", "open", "screenshot", "snapshot"]
             res = await cs.call_tool("open", {"url": base + "/login.html"})
             assert "textbox \"Username\"" in res.content[0].text and not res.is_error
             res = await cs.call_tool("act", {"action": "click", "id": 4242})
@@ -131,7 +133,7 @@ async def test_lean_eval_loop_offline(base, mode):
     assert res.success, res.reason
     assert res.steps == 2 and res.input_tokens == 200
     first = client.seen[0]
-    assert {t["name"] for t in first["tools"]} == {"open", "snapshot", "act", "fill_form", "extract", "screenshot", "answer"}
+    assert {t["name"] for t in first["tools"]} == {"open", "snapshot", "act", "fill_form", "extract", "memory", "screenshot", "answer"}
     assert "open() result:" in first["messages"][0]["content"]
 
 
@@ -157,3 +159,20 @@ async def test_playwright_mcp_baseline_offline(base):
     assert res.success, res.reason
     first = client.seen[0]["messages"][0]["content"]
     assert "browser_navigate result:" in first and "Halden" in first
+
+
+
+async def test_memory_keeps_facts_with_provenance_across_navigation(lb, base):
+    assert (await lb.call("memory", {"action": "list"}))[0] == '<page untrusted="true">\nmemory is empty\n</page>' \
+        or (await lb.call("memory", {"action": "list"}))[0] == "memory is empty"
+    await lb.open(base + "/orders.html")
+    await lb.remember("cheapest_order", "ORD-1012 for ₹254")
+    await lb.open(base + "/login.html")
+    m = await lb.recall("cheapest_order")
+    assert m["value"] == "ORD-1012 for ₹254" and m["source"]["url"].endswith("/orders.html")
+    assert m["source"]["title"].startswith("Orders")
+    listed = (await lb.call("memory", {"action": "list"}))[0]
+    assert "cheapest_order = ORD-1012" in listed and "/orders.html" in listed
+    assert (await lb.call("memory", {"action": "get", "key": "nope"}))[0].startswith("Error: no memory 'nope'")
+    assert "deleted" in (await lb.call("memory", {"action": "delete", "key": "cheapest_order"}))[0]
+    assert (await lb.recall()) == {}

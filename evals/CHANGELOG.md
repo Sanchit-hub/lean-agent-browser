@@ -15,8 +15,9 @@ results from the entry below.
 | **Lean (3 runs)** | **54/54** | **11,572** | **5.1** | **11.0 s** | **$0.013** |
 
 - **Why agent-browser uses so many tokens:** its default `core` profile exposes 29 tools whose definitions
-  come to ~19,400 tokens (tiktoken proxy), against ~586 for lean's 6 tools. Those definitions go with
-  every request. The page snapshots themselves are compact.
+  Claude counts at **~31,600 tokens**, against ~7,100 for Playwright MCP and **~1,550 for lean's 7 tools**.
+  These were measured with `claude -p` as the input-token difference against a run with no MCP server.
+  Those definitions go with every request. The page snapshots themselves are compact.
 - **The one failure (`apply`) is a configuration limit, not a harness bug.** The `core` profile has no
   file-upload tool, so the agent filled the form but couldn't attach the resume. `--tools all` adds
   uploads, with an even larger schema.
