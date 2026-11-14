@@ -169,9 +169,14 @@ async def test_full_mode_includes_text(bm, base):
 
 
 async def test_big_page_performance(bm, base):
-    tab, _, s, out = await snap(bm, base + "/big.html")
+    import os
+    # Shared CI runners are several times slower than a dev Mac, so CI gets looser limits (and a longer
+    # snapshot timeout); the measured time is printed either way.
+    ci = bool(os.environ.get("CI"))
+    tab, _, s, out = await snap(bm, base + "/big.html", sn=Snapshotter(timeout_s=20 if ci else 2))
+    print(f"big page snapshot on {bm.expected}: {s.ms} ms")
     assert 'table "Big repo" 1200 rows' in out
-    limit = 1500 if bm.expected == "obscura" else 300
+    limit = (8000 if ci else 1500) if bm.expected == "obscura" else (1500 if ci else 300)
     assert s.ms < limit, f"{bm.expected} took {s.ms} ms"
     assert len(out) < 2000
 

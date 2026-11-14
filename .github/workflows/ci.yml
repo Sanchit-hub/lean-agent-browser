@@ -31,4 +31,4 @@ jobs:
       - name: Install (pinned + checksummed Obscura, Chromium, self-check)
         run: PYTHON=python3 ./install.sh
       - name: Tests
-        run: .venv/bin/python -m pytest -q
+        run: .venv/bin/python -m pytest -q -rs -s -k 'not big_page' && .venv/bin/python -m pytest -q -s -k big_page
