@@ -296,6 +296,16 @@
     return '';
   }
 
+  // ---------- scope (within=id): the form/table/list/section that contains element id ----------
+  const CONTAINER_SEL = 'form,table,fieldset,[role=dialog],dialog,article,section,ul,ol,[role=list],[role=grid],nav,aside,main,[role=main]';
+  let scopeEl = null, scopeErr = null;
+  if (opts.within != null) {
+    const ref = S.byId.get(+opts.within);
+    const el = ref && ref.deref();
+    if (!el || !el.isConnected) scopeErr = `id ${opts.within} not found — call snapshot()`;
+    else scopeEl = el.matches(CONTAINER_SEL) ? el : (el.closest(CONTAINER_SEL) || el.parentElement || el);
+  }
+  if (scopeErr) return { v: 1, error: scopeErr };
   const PROF = {}; let PT = performance.now();
   const mark = k => { const n = performance.now(); PROF[k] = Math.round(n - PT); PT = n; };
   // ---------- dialog / banner ----------
@@ -317,7 +327,7 @@
   mark('dialog_banner');
   // ---------- read mode: main content as markdown ----------
   if (MODE === 'read') {
-    const scope = dialog || document.querySelector('main article,article,main,[role=main]') || document.body;
+    const scope = scopeEl || dialog || document.querySelector('main article,article,main,[role=main]') || document.body;
     const lines = [];
     const inline = el => {
       let s = '';
@@ -380,7 +390,7 @@
   const handleFor = kind => (kind[0]) + (++groupN);
   const seenLinks = new Set();
   const mainEl = document.querySelector('main,[role=main]');
-  const root = dialog || document.body;
+  const root = scopeEl || dialog || document.body;
   const FULL = MODE === 'full';
 
   function walk(node, sink, ctx) {
@@ -485,6 +495,7 @@
 
   return {
     v: 1, mode: MODE, title: clip(document.title, 80), path, origin: location.origin, docId: S.docId,
+    within: scopeEl ? { id: +opts.within, tag: scopeEl.tagName.toLowerCase(), label: clip(scopeEl.getAttribute('aria-label') || (scopeEl.querySelector('legend,caption,h1,h2,h3') || {}).innerText || '', 40) } : null,
     routeChanged, dialog: dialog ? { name: accName(dialog) || 'dialog' } : null, banner, entries: out, prof: PROF,
     ms: Math.round(performance.now() - T0),
   };

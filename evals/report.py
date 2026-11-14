@@ -64,9 +64,13 @@ def write_report(out_dir: Path) -> Path:
 
     path = out_dir / "report.md"
     path.write_text("\n".join(lines))
-    latest = out_dir.parent.parent / "report.md"
-    latest.write_text("\n".join(lines))
-    return latest
+    # Only a full run (all 18 tasks, >= 3 runs) replaces the committed evals/report.md;
+    # quick or partial runs keep their report inside their own results folder.
+    if len(meta["tasks"]) >= 18 and meta["runs"] >= 3:
+        latest = out_dir.parent.parent / "report.md"
+        latest.write_text("\n".join(lines))
+        return latest
+    return path
 
 
 if __name__ == "__main__":

@@ -3,12 +3,17 @@
 (opts) => {
   const kind = opts.kind || 'auto';
   let root = document.body;
+  const CONTAINER_SEL = 'form,table,fieldset,[role=dialog],dialog,article,section,ul,ol,[role=list],[role=grid],nav,aside,main,[role=main]';
   if (opts.within != null) {
     const r = window.__lab && window.__lab.byId.get(+opts.within);
     const el = r && r.deref();
-    if (!el) return { error: `id ${opts.within} not found — call snapshot()` };
-    root = el;
+    if (!el || !el.isConnected) return { error: `id ${opts.within} not found — call snapshot()` };
+    root = el.matches(CONTAINER_SEL) ? el : (el.closest(CONTAINER_SEL) || el);
   }
+  const fields = (opts.fields || []).map(f => String(f).toLowerCase().replace(/\[.*?\]/g, '').trim()).filter(Boolean);
+  const wants = h => !fields.length || fields.some(f => String(h || '').toLowerCase().replace(/\[.*?\]/g, '').includes(f));
+  const idsIn = el => [...el.querySelectorAll('[data-lab-id]')].map(e => +e.dataset.labId);
+  const source = { url: location.href, title: document.title };
   const clip = (s, n) => { s = (s || '').replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
   const vis = el => { if (!el.isConnected) return false; const cs = getComputedStyle(el);
     if (cs.display === 'none' || cs.visibility === 'hidden') return false; const r = el.getBoundingClientRect(); return r.width > 0 || r.height > 0; };
@@ -28,11 +33,22 @@
     if (!rows.length) return null;
     let headers = null, body = rows;
     if (rows[0].querySelector('th')) { headers = cellsOf(rows[0]).map(c => clip(c.innerText, 60)); body = rows.slice(1); }
-    const data = body.slice(0, 200).map(r => {
+    const keep = headers ? headers.map(h => wants(h)) : null;
+    const data = body.slice(0, 200).map((r, ri) => {
       const cells = cellsOf(r).map(c => clip(c.innerText, 120));
-      return headers && headers.length === cells.length ? Object.fromEntries(headers.map((h, i) => [h || `col${i + 1}`, cells[i]])) : cells;
+      let row;
+      if (headers && headers.length === cells.length) {
+        row = {};
+        headers.forEach((h, i) => { if (keep[i]) row[h || `col${i + 1}`] = cells[i]; });
+      } else row = { cells };
+      row._row = ri + 1;
+      const ids = idsIn(r); if (ids.length) row._ids = ids;
+      return row;
     });
-    return { kind: 'table', headers, rows: data, total_rows: body.length };
+    const out = { kind: 'table', source, headers: headers && keep ? headers.filter((h, i) => keep[i]) : headers, rows: data, total_rows: body.length };
+    if (fields.length && !headers) out.note = 'table has no header row; fields ignored';
+    else if (fields.length && !keep.some(Boolean)) out.note = 'no column matched fields; columns: ' + headers.join(' | ');
+    return out;
   }
   function list() {
     let best = null, n = 0;
@@ -46,13 +62,14 @@
     }
     if (!best) return null;
     const items = [...best.el.children].filter(k => vis(k) && (k.tagName + '.' + (typeof k.className === 'string' ? k.className : '')) === best.sig)
-      .slice(0, 200).map(k => { const o = { text: clip(k.innerText, 200) }; const l = links(k); if (l.length) o.links = l; return o; });
-    return { kind: 'list', items, total_items: items.length };
+      .slice(0, 200).map((k, i) => { const o = { text: clip(k.innerText, 200), _item: i + 1 }; const l = links(k); if (l.length) o.links = l; return o; })
+      .filter(o => !fields.length || fields.some(f => o.text.toLowerCase().includes(f)));
+    return { kind: 'list', source, items, total_items: items.length, ...(fields.length ? { note: 'list items filtered to those mentioning a field' } : {}) };
   }
   function form() {
     const forms = [...(root.tagName === 'FORM' ? [root] : root.querySelectorAll('form'))].filter(vis);
     const scope = forms.length ? forms : [root];
-    const fields = [];
+    const out = [];
     for (const f of scope) {
       for (const el of f.querySelectorAll('input:not([type=hidden]),select,textarea')) {
         if (!vis(el) && !['checkbox', 'radio', 'file'].includes(el.type)) continue;
@@ -64,10 +81,10 @@
         else if (el.tagName === 'SELECT') { o.value = el.selectedIndex >= 0 ? el.options[el.selectedIndex].text : ''; o.options = [...el.options].map(x => x.text.trim()); }
         else if (el.type !== 'file') o.value = el.value;
         if (el.required || el.hasAttribute('required')) o.required = true;
-        fields.push(o);
+        if (wants(o.name)) out.push(o);
       }
     }
-    return fields.length ? { kind: 'form', fields } : null;
+    return out.length ? { kind: 'form', source, fields: out } : null;
   }
   if (kind === 'table') return table() || { error: 'no visible table' };
   if (kind === 'list') return list() || { error: 'no repeated list found' };

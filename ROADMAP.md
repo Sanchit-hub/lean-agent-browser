@@ -38,7 +38,10 @@ Every action returns a structured status: `verified`, `unverified`, `ambiguous`,
 - **Irreversible actions** (submit, delete, pay, send) are never retried silently.
 - **Metrics:** recovery rate, false-success rate, task completion.
 
-### 2. Scoped context with provenance (deterministic first)
+### 2. Scoped context with provenance (deterministic first) — **done (2026-11-15)**
+`snapshot(within=id)` scopes to the containing form, table or section. `extract` gained `fields`, provenance
+(`source` URL and title, `_row`/`_item`, `_ids`) and `new_only`. Tests: `tests/test_context.py`, both engines.
+Goal-based relevance remains future, opt-in work. The original plan:
 - `snapshot(within=id)`, plus `extract(fields=[...])` scoped to a table, list, form or region.
 - Every extracted fact carries its source element id and URL.
 - Track what the agent has already seen, so later calls return only new or changed facts.

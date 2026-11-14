@@ -27,10 +27,10 @@ TOOLS: list[dict] = [
     {"name": "open", "description": "Open a URL; returns a compact page snapshot with element ids.",
      "input_schema": {"type": "object", "properties": {"url": {"type": "string"}, "mode": {"enum": MODES},
                                                        "block": {"type": "boolean"}}, "required": ["url"]}},
-    {"name": "snapshot", "description": "Current page. expand/more take handles from the snapshot; find searches all text.",
+    {"name": "snapshot", "description": "Current page. expand/more take handles; find searches all text; within=id scopes to that element's form/table/section.",
      "input_schema": {"type": "object", "properties": {"mode": {"enum": MODES}, "budget": {"type": "integer"},
                                                        "expand": {"type": "string"}, "more": {"type": "string"},
-                                                       "find": {"type": "string"}}}},
+                                                       "find": {"type": "string"}, "within": {"type": "integer"}}}},
     {"name": "act", "description": "Act on element id; returns only what changed. select takes an option label; "
                                    "press a key; tab: list|new:URL|switch:N|close:N; dialog: accept|dismiss (next dialog).",
      "input_schema": {"type": "object", "properties": {"action": {"enum": ACTIONS}, "id": {"type": "integer"},
@@ -38,9 +38,11 @@ TOOLS: list[dict] = [
     {"name": "fill_form", "description": "Fill many fields at once ({id: value}); submit=true clicks the form's submit button.",
      "input_schema": {"type": "object", "properties": {"fields": {"type": "object", "additionalProperties": {"type": "string"}},
                                                        "submit": {"type": ["boolean", "integer"]}}, "required": ["fields"]}},
-    {"name": "extract", "description": "Structured JSON of a table, list or form on the page.",
+    {"name": "extract", "description": "JSON of a table, list or form, with source URL and row ids. fields picks columns; new_only skips rows already returned.",
      "input_schema": {"type": "object", "properties": {"kind": {"enum": ["auto", "table", "list", "form"]},
-                                                       "within": {"type": "integer"}}}},
+                                                       "within": {"type": "integer"},
+                                                       "fields": {"type": "array", "items": {"type": "string"}},
+                                                       "new_only": {"type": "boolean"}}}},
     {"name": "screenshot", "description": "PNG of the viewport or one element. Only for captchas, charts or layout.",
      "input_schema": {"type": "object", "properties": {"id": {"type": "integer"}}}},
 ]
@@ -123,8 +125,9 @@ class LeanBrowser:
         return await self._text("open", args)
 
     async def snapshot(self, mode: str = "actions", budget: int | None = None, expand: str | None = None,
-                       more: str | None = None, find: str | None = None) -> str:
-        args = {k: v for k, v in dict(mode=mode, budget=budget, expand=expand, more=more, find=find).items() if v is not None}
+                       more: str | None = None, find: str | None = None, within: int | None = None) -> str:
+        args = {k: v for k, v in dict(mode=mode, budget=budget, expand=expand, more=more, find=find, within=within).items()
+                if v is not None}
         return await self._text("snapshot", args)
 
     async def act(self, action: str, id: int | None = None, value: str | None = None) -> str:
@@ -134,8 +137,10 @@ class LeanBrowser:
     async def fill_form(self, fields: dict, submit: bool | int = False) -> str:
         return await self._text("fill_form", {"fields": {str(k): str(v) for k, v in fields.items()}, "submit": submit})
 
-    async def extract(self, kind: str = "auto", within: int | None = None) -> dict:
-        args = {"kind": kind} if within is None else {"kind": kind, "within": within}
+    async def extract(self, kind: str = "auto", within: int | None = None, fields: list[str] | None = None,
+                      new_only: bool = False) -> dict:
+        args = {k: v for k, v in dict(kind=kind, within=within, fields=fields, new_only=new_only or None).items()
+                if v is not None}
         return json.loads(await self._text("extract", args))
 
     async def screenshot(self, id: int | None = None) -> bytes:
@@ -167,7 +172,7 @@ class LeanBrowser:
             if name == "snapshot":
                 return [wrap_untrusted(await s.snapshot(mode=args.get("mode", "actions"), budget=args.get("budget"),
                                                         expand=args.get("expand"), more=args.get("more"),
-                                                        find=args.get("find")))]
+                                                        find=args.get("find"), within=args.get("within")))]
             if name == "act":
                 action = args.get("action", "")
                 value = args.get("value")
@@ -180,7 +185,8 @@ class LeanBrowser:
                     fields = json.loads(fields)
                 return [wrap_untrusted(await s.fill_form(fields, submit=args.get("submit", False)))]
             if name == "extract":
-                data = await s.extract(args.get("kind", "auto"), args.get("within"))
+                data = await s.extract(args.get("kind", "auto"), args.get("within"), args.get("fields"),
+                                       bool(args.get("new_only", False)))
                 return [wrap_untrusted(json.dumps(data, ensure_ascii=False))]
             if name == "screenshot":
                 png = await s.screenshot(args.get("id"))

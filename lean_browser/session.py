@@ -14,8 +14,10 @@ same-origin-iframe elements work the same way.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import re
+from urllib.parse import urlparse
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -186,6 +188,7 @@ class Session:
         self.settle_cap_s = settle_cap_s
         self._watched_ctx: set[int] = set()
         self._opening = False  # pages we create ourselves are not popups
+        self._seen: dict[tuple, set[str]] = {}  # extract(new_only=True) memory, per page path + scope
 
     # ---------- tabs ----------
     @property
@@ -270,10 +273,18 @@ class Session:
         return "\n".join(n)
 
     async def snapshot(self, mode: str = "actions", budget: int | None = None, expand: str | None = None,
-                       more: str | None = None, find: str | None = None) -> str:
+                       more: str | None = None, find: str | None = None, within: int | None = None) -> str:
         ts = self.cur
         if more:
             return ts.snapper.more(more, budget=budget or 800)
+        if within is not None:
+            if not ts.snapper.last:
+                await self._take(ts)
+            try:
+                snap = await ts.snapper.take(ts.page, mode=mode, engine=ts.tab.header, within=int(within))
+            except ValueError as e:
+                raise ActionError(str(e)) from e
+            return ts.snapper.render(snap, budget=budget, skip_unchanged=False)
         snap = await self._take(ts, "actions" if (find or expand) else mode)
         if find:
             return ts.snapper.find(find)
@@ -653,15 +664,30 @@ class Session:
                   "submitted": bool(submit) and not errors}
         return await self._after(ts, before, tabs_before, prefix, expect)
 
-    async def extract(self, kind: str = "auto", within: int | None = None) -> dict:
+    async def extract(self, kind: str = "auto", within: int | None = None, fields: list[str] | None = None,
+                      new_only: bool = False) -> dict:
+        """Deterministic JSON with provenance (source URL, row/item number, element ids).
+        new_only=True drops rows/items already returned for this page + scope (pagination, infinite scroll)."""
         ts = self.cur
         if kind not in ("auto", "table", "list", "form"):
             raise ActionError("kind must be auto, table, list or form")
         if within is not None and not ts.snapper.last:
             await self._take(ts)
-        res = await ts.page.evaluate(EXTRACT_JS, {"kind": kind, "within": within})
+        res = await ts.page.evaluate(EXTRACT_JS, {"kind": kind, "within": within, "fields": list(fields or [])})
         if isinstance(res, dict) and res.get("error"):
             raise ActionError(res["error"])
+        if new_only and res.get("kind") in ("table", "list"):
+            key = (urlparse(ts.page.url).path, res["kind"], within, tuple(fields or ()))
+            seen = self._seen.setdefault(key, set())
+            rows_key = "rows" if res["kind"] == "table" else "items"
+            fresh = []
+            for r in res[rows_key]:
+                h = json.dumps({k: v for k, v in r.items() if not k.startswith("_")}, sort_keys=True)
+                if h not in seen:
+                    seen.add(h)
+                    fresh.append(r)
+            res["already_seen"] = len(res[rows_key]) - len(fresh)
+            res[rows_key] = fresh
         return res
 
     async def screenshot(self, id: int | None = None) -> bytes:

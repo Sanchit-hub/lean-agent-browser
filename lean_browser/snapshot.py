@@ -167,11 +167,15 @@ class Snapshotter:
     _cursors: dict = field(default_factory=dict)
     _k: int = 0
 
-    async def take(self, page: Page, mode: str = "actions", engine: str = "") -> Snapshot:
+    async def take(self, page: Page, mode: str = "actions", engine: str = "", within: int | None = None) -> Snapshot:
         try:
-            data = await asyncio.wait_for(page.evaluate(SNAPSHOT_JS, {"mode": mode}), self.timeout_s)
+            data = await asyncio.wait_for(page.evaluate(SNAPSHOT_JS, {"mode": mode, "within": within}), self.timeout_s)
         except asyncio.TimeoutError as e:
             raise SnapshotTimeout(f"snapshot took longer than {self.timeout_s}s") from e
+        if data.get("error"):
+            raise ValueError(data["error"])
+        if within is not None:  # a scoped view never becomes the diff baseline or changes page-change tracking
+            return Snapshot(data, engine, self.seq)
         self.seq += 1
         changed = bool(self._doc_id) and data["docId"] != self._doc_id
         self._doc_id = data["docId"]
@@ -183,6 +187,9 @@ class Snapshotter:
     def _header(self, snap: Snapshot) -> str:
         d = snap.data
         parts = [f"page: {d['title']}", f"url: {d['path']}"]
+        if d.get("within"):
+            w = d["within"]
+            parts.append(f"within {w['id']} ({w['tag']}{' ' + _q(w['label']) if w.get('label') else ''})")
         if snap.engine:
             parts.append(snap.engine)
         flags = []
@@ -214,9 +221,10 @@ class Snapshotter:
             body = d.get("markdown", "").split("\n")
             return "\n".join([self._header(snap)] + self._budgeted(body, budget))
         h = hashlib.sha1(json.dumps(d["entries"], sort_keys=True).encode()).hexdigest()
-        if skip_unchanged and expand is None and h == self._last_hash and not snap.page_changed and snap.mode == "actions":
+        scoped = bool(d.get("within"))
+        if skip_unchanged and not scoped and expand is None and h == self._last_hash and not snap.page_changed and snap.mode == "actions":
             return f"unchanged (snapshot #{snap.seq - 1})"
-        if snap.mode == "actions" and expand is None:
+        if snap.mode == "actions" and expand is None and not scoped:
             self._last_hash = h
         lines = [self._header(snap)]
         if d.get("dialog"):
