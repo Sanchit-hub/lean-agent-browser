@@ -18,7 +18,7 @@ from pathlib import Path
 from playwright.async_api import Page
 
 SNAPSHOT_JS = (Path(__file__).parent / "snapshot.js").read_text()
-DEFAULT_BUDGET = {"actions": 800, "read": 1500, "full": 4000}  # tokens (≈ chars / 4)
+DEFAULT_BUDGET = {"minimal": 400, "actions": 800, "read": 1500, "full": 4000}  # tokens (≈ chars / 4)
 CHARS_PER_TOKEN = 4
 
 
@@ -168,19 +168,22 @@ class Snapshotter:
     _k: int = 0
 
     async def take(self, page: Page, mode: str = "actions", engine: str = "", within: int | None = None) -> Snapshot:
+        js_mode = "actions" if mode == "minimal" else mode  # minimal = actions data, rendered without text/headings
         try:
-            data = await asyncio.wait_for(page.evaluate(SNAPSHOT_JS, {"mode": mode, "within": within}), self.timeout_s)
+            data = await asyncio.wait_for(page.evaluate(SNAPSHOT_JS, {"mode": js_mode, "within": within}), self.timeout_s)
         except asyncio.TimeoutError as e:
             raise SnapshotTimeout(f"snapshot took longer than {self.timeout_s}s") from e
         if data.get("error"):
             raise ValueError(data["error"])
+        if mode == "minimal":
+            data["mode"] = "minimal"
         if within is not None:  # a scoped view never becomes the diff baseline or changes page-change tracking
             return Snapshot(data, engine, self.seq)
         self.seq += 1
         changed = bool(self._doc_id) and data["docId"] != self._doc_id
         self._doc_id = data["docId"]
         snap = Snapshot(data, engine, self.seq, changed)
-        if mode == "actions":
+        if mode in ("actions", "minimal"):
             self.last = snap
         return snap
 
@@ -222,9 +225,9 @@ class Snapshotter:
             return "\n".join([self._header(snap)] + self._budgeted(body, budget))
         h = hashlib.sha1(json.dumps(d["entries"], sort_keys=True).encode()).hexdigest()
         scoped = bool(d.get("within"))
-        if skip_unchanged and not scoped and expand is None and h == self._last_hash and not snap.page_changed and snap.mode == "actions":
+        if skip_unchanged and not scoped and expand is None and h == self._last_hash and not snap.page_changed and snap.mode in ("actions", "minimal"):
             return f"unchanged (snapshot #{snap.seq - 1})"
-        if snap.mode == "actions" and expand is None and not scoped:
+        if snap.mode in ("actions", "minimal") and expand is None and not scoped:
             self._last_hash = h
         lines = [self._header(snap)]
         if d.get("dialog"):
@@ -237,6 +240,10 @@ class Snapshotter:
             if not g:
                 return f"no group {expand!r} in the latest snapshot — call snapshot() again"
             lines += render_entries([g], expand=expand)
+        elif snap.mode == "minimal":
+            # interactive elements and collapsed groups only: no headings, no text lines (dialog text kept)
+            keep = [e for e in d["entries"] if e["t"] in ("el", "group") or (d.get("dialog") and e["t"] == "txt")]
+            lines += render_entries(keep)
         else:
             lines += render_entries(d["entries"], expand_all=snap.mode == "full")
         return "\n".join(self._budgeted(lines, budget))

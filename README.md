@@ -106,12 +106,12 @@ There are six tools. Their definitions add up to about 515 tokens, and they are 
 
 | Tool | What it does |
 |---|---|
-| `open(url, mode?, block?)` | Navigate, then return a snapshot. `mode` is `actions` (default), `read` (markdown) or `full`. |
+| `open(url, mode?, block?)` | Navigate, then return a snapshot. `mode` is `minimal` (interactive elements only), `actions` (default), `read` (markdown) or `full`. |
 | `snapshot(mode?, budget?, expand?, more?, find?, within?)` | Current page. `expand:h1` opens a collapsed group, `more:k1` continues cut-off output, `find` searches everything (including collapsed rows), and `within=<id>` shows only the form, table or section containing that element. |
 | `act(action, id?, value?)` | Actions: `click`, `fill`, `select` (an option label, also works on custom dropdowns), `check`, `uncheck`, `clear`, `press`, `hover`, `focus`, `upload`, `scroll`, `back`, `forward`, `reload`, `wait_for`, `tab` (`list` / `new:URL` / `switch:N` / `close:N`), `dialog` (`accept` / `dismiss` the next native dialog). Returns a status line (`verified` / `unverified` / `timed_out`, with evidence) and a diff. A re-rendered element is re-found once by role and name; if that's ambiguous, nothing is clicked. |
 | `fill_form(fields, submit?)` | `{id: value}` for a whole form in one call. `submit=true` clicks the form's submit button. |
 | `extract(kind?, within?, fields?, new_only?)` | Deterministic JSON for a `table`, `list` or `form` (no LLM involved). Every result carries its source URL, plus row or item numbers and element ids. `fields` picks columns, and `new_only` returns only rows not returned before, which suits pagination and infinite scroll. |
-| `screenshot(id?)` | Viewport or element PNG. Only for captchas, charts or layout. |
+| `screenshot(id?, annotate?)` | Viewport or element PNG. `annotate=true` draws each snapshot id on its element, so the image maps back to ids the agent can act on. Only for captchas, charts or layout. |
 
 ## CLI
 

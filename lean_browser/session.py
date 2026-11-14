@@ -87,6 +87,32 @@ FIND_OPTION_JS = """(value) => {
   return opts.find(o => vis(o) && norm(o.textContent) === norm(value)) || opts.find(o => vis(o) && norm(o.textContent).includes(norm(value))) || null;
 }"""
 
+# Overlay that labels every snapshot element visible in the viewport with its id (set-of-marks).
+ANNOTATE_JS = r"""() => {
+  const old = document.getElementById('__lab_marks'); if (old) old.remove();
+  const box = document.createElement('div');
+  box.id = '__lab_marks';
+  box.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:2147483647';
+  const S = window.__lab; if (!S) return 0;
+  let n = 0;
+  for (const [id, ref] of S.byId) {
+    const el = ref.deref();
+    if (!el || !el.isConnected || el.ownerDocument !== document) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width < 2 || r.height < 2 || r.bottom < 0 || r.right < 0 || r.top > innerHeight || r.left > innerWidth) continue;
+    if (el.checkVisibility && !el.checkVisibility({ opacityProperty: true, visibilityProperty: true })) continue;
+    const m = document.createElement('div');
+    m.style.cssText = `position:fixed;left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px;` +
+      'outline:2px solid #e8590c;box-sizing:border-box';
+    const tag = document.createElement('span');
+    tag.textContent = id;
+    tag.style.cssText = `position:absolute;left:-2px;top:${r.top < 16 ? 0 : -16}px;background:#e8590c;color:#fff;font:bold 11px/14px monospace;padding:0 3px`;
+    m.appendChild(tag); box.appendChild(m); n++;
+  }
+  document.documentElement.appendChild(box);
+  return n;
+}"""
+
 SUBMIT_BUTTON_JS = """el => { const f = el.form || el.closest('form'); if (!f) return null;
   return f.querySelector('button[type=submit],input[type=submit],button:not([type])'); }"""
 
@@ -285,7 +311,7 @@ class Session:
             except ValueError as e:
                 raise ActionError(str(e)) from e
             return ts.snapper.render(snap, budget=budget, skip_unchanged=False)
-        snap = await self._take(ts, "actions" if (find or expand) else mode)
+        snap = await self._take(ts, "actions" if (find or expand) else mode)  # modes: minimal|actions|read|full
         if find:
             return ts.snapper.find(find)
         if expand:
@@ -702,16 +728,25 @@ class Session:
             res[rows_key] = fresh
         return res
 
-    async def screenshot(self, id: int | None = None) -> bytes:
-        """Viewport PNG, or a crop of one element. For captchas, charts and layout questions only."""
+    async def screenshot(self, id: int | None = None, annotate: bool = False) -> bytes:
+        """Viewport PNG, or a crop of one element. annotate=True draws each snapshot id on its element,
+        so what the agent sees in the image maps back to ids it can act on."""
         ts = self.cur
-        if id is None:
-            return await ts.page.screenshot()
-        el = await self._handle(ts, int(id))
+        if annotate:
+            if not ts.snapper.last:
+                await self._take(ts)
+            await ts.page.evaluate(ANNOTATE_JS)
         try:
-            return await el.screenshot(timeout=10000)
-        except Exception as e:
-            raise ActionError(_short(e)) from e
+            if id is None:
+                return await ts.page.screenshot()
+            el = await self._handle(ts, int(id))
+            try:
+                return await el.screenshot(timeout=10000)
+            except Exception as e:
+                raise ActionError(_short(e)) from e
+        finally:
+            if annotate:
+                await ts.page.evaluate("() => { const o = document.getElementById('__lab_marks'); if (o) o.remove(); }")
 
     async def _wait_for(self, text: str, timeout_s: float = 10) -> str:
         ts = self.cur

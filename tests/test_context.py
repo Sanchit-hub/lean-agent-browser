@@ -83,3 +83,20 @@ async def test_extract_new_only_across_infinite_scroll(b, base):
     assert second["items"][0]["text"].startswith("#11")
     again = await b.extract("list", new_only=True)
     assert again["items"] == [] and again["already_seen"] == 20
+
+
+async def test_minimal_mode_drops_headings_and_text(b, base):
+    page = await b.open(base + "/misc.html", mode="minimal")
+    assert "# Misc widgets" not in page and "text: 3 items in cart" not in page
+    assert 'clickable "Open settings"' in page and "banner: cookies" in page
+    full = await b.snapshot()
+    assert full.startswith("unchanged")   # minimal and actions share the same baseline
+
+
+async def test_annotated_screenshot_leaves_no_trace(b, base):
+    await b.open(base + "/signup.html")
+    plain = await b.screenshot()
+    marked = await b.screenshot(annotate=True)
+    assert marked[:4] == b"\x89PNG" and marked != plain
+    assert not await b.session.cur.page.evaluate("!!document.getElementById('__lab_marks')")
+    assert (await b.snapshot()).startswith("unchanged")   # the overlay never shows up in snapshots

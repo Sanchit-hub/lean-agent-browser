@@ -21,7 +21,7 @@ from lean_browser.snapshot import wrap_untrusted
 
 ACTIONS = ["click", "fill", "select", "check", "uncheck", "clear", "press", "hover", "focus", "upload", "scroll",
            "back", "forward", "reload", "wait_for", "tab", "dialog"]
-MODES = ["actions", "read", "full"]
+MODES = ["minimal", "actions", "read", "full"]
 
 TOOLS: list[dict] = [
     {"name": "open", "description": "Open a URL; returns a compact page snapshot with element ids.",
@@ -43,8 +43,8 @@ TOOLS: list[dict] = [
                                                        "within": {"type": "integer"},
                                                        "fields": {"type": "array", "items": {"type": "string"}},
                                                        "new_only": {"type": "boolean"}}}},
-    {"name": "screenshot", "description": "PNG of the viewport or one element. Only for captchas, charts or layout.",
-     "input_schema": {"type": "object", "properties": {"id": {"type": "integer"}}}},
+    {"name": "screenshot", "description": "PNG of the viewport or one element; annotate=true labels elements with their ids. Only for captchas, charts or layout.",
+     "input_schema": {"type": "object", "properties": {"id": {"type": "integer"}, "annotate": {"type": "boolean"}}}},
 ]
 TOOL_NAMES = {t["name"] for t in TOOLS}
 
@@ -149,8 +149,11 @@ class LeanBrowser:
                 if v is not None}
         return json.loads(await self._text("extract", args))
 
-    async def screenshot(self, id: int | None = None) -> bytes:
-        parts = await self.call("screenshot", {} if id is None else {"id": id})
+    async def screenshot(self, id: int | None = None, annotate: bool = False) -> bytes:
+        args = {} if id is None else {"id": id}
+        if annotate:
+            args["annotate"] = True
+        parts = await self.call("screenshot", args)
         png = next((p for p in parts if isinstance(p, bytes)), None)
         if png is None:
             raise LeanBrowserError(next((p for p in parts if isinstance(p, str)), "no image")[len("Error: "):])
@@ -212,7 +215,7 @@ class LeanBrowser:
                                        bool(args.get("new_only", False)))
                 return [wrap_untrusted(json.dumps(data, ensure_ascii=False))]
             if name == "screenshot":
-                png = await s.screenshot(args.get("id"))
+                png = await s.screenshot(args.get("id"), bool(args.get("annotate", False)))
                 if self.bm.block and s.cur.tab.engine == "chromium":
                     return ["(images are blocked; call open(url, block=false) if visuals matter)", png]
                 return [png]

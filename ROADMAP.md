@@ -62,10 +62,11 @@ Still open: live-site tasks, and Stagehand and Browser Use reported in their own
 - Add some third-party or live-site tasks next to our own fixtures, labelled as live, where results vary.
 
 ### Later
-- **Visual and DOM fusion:** targeted screenshots only when DOM evidence is ambiguous (canvas, charts,
-  spatial UIs).
+- **Visual and DOM fusion:** started (2026-11-15). `screenshot(annotate=true)` labels elements with their
+  snapshot ids. Still open: choosing automatically when to use a screenshot.
 - **Task and session memory** with explicit scopes, expiry and provenance.
-- **Adaptive budget strategies:** `minimal`, `balanced`, `complete`.
+- **Adaptive budget strategies:** `minimal` mode is done. Today `actions` plays the role of balanced and
+  `full` the role of complete.
 - **Packaging:** `pip install` plus `leanb install` for the engines.
 
 ## Not now
