@@ -44,12 +44,29 @@
     const fe = el.ownerDocument && el.ownerDocument.defaultView && el.ownerDocument.defaultView.frameElement;
     return fe || null;
   }
-  function visible(el) {
+  // Native checkVisibility() covers display/visibility/opacity/content-visibility for the element and its
+  // ancestors (through shadow roots). On Obscura it is ~1000x faster than reading several computed-style
+  // properties (2 ms vs 2.2 s on a GitHub page), so it is the fast path; the manual walk is the fallback.
+  const HAS_CV = typeof Element.prototype.checkVisibility === 'function';
+  function visibleSlow(el) {
     if (!el || el.nodeType !== 1) return true;
     if (vcache.has(el)) return vcache.get(el);
     let v;
     if (el.tagName === 'BODY' || el.tagName === 'HTML') v = !hiddenSelf(el);
-    else v = !hiddenSelf(el) && visible(parentOf(el));
+    else v = !hiddenSelf(el) && visibleSlow(parentOf(el));
+    vcache.set(el, v);
+    return v;
+  }
+  function visible(el) {
+    if (!el || el.nodeType !== 1) return true;
+    if (!HAS_CV) return visibleSlow(el);
+    if (vcache.has(el)) return vcache.get(el);
+    let v = el.checkVisibility({ opacityProperty: true, visibilityProperty: true, contentVisibilityAuto: true })
+      && !el.closest('[hidden],[aria-hidden=true]');
+    if (v && el.ownerDocument !== document) {  // inside an iframe: the frame element must be visible too
+      const fe = el.ownerDocument.defaultView && el.ownerDocument.defaultView.frameElement;
+      if (fe) v = visible(fe);
+    }
     vcache.set(el, v);
     return v;
   }
@@ -110,7 +127,9 @@
       if (tag === 'INPUT' && ['submit', 'button', 'reset'].includes(el.type)) return clip(el.value || el.type, 60);
       return clip(el.getAttribute('name') || '', 60);  // last resort: the form field name (e.g. "q")
     }
-    let t = el.innerText;
+    // Text-only elements (no child elements) can't hide text inside them, so textContent is safe and
+    // far cheaper than innerText on Obscura (innerText costs ~0.17 ms per element there).
+    let t = el.children.length === 0 ? el.textContent : el.innerText;
     if (t && t.trim()) return clip(t, 60);
     const img = el.querySelector && el.querySelector('img[alt]');
     const alt = img ? (img.getAttribute('alt') || '') : '';

@@ -223,9 +223,12 @@ Tests are in `tests/test_snapshot.py` and run on both engines.
   | Hacker News | 92 | 6 | 959 | 959 | 10,263 |
   | 6k-element fixture | 472 | 15 | — | — | — |
 
-  The default snapshot is **10–20× smaller** than the aria snapshot. **GitHub on Obscura misses the
-  300 ms target** but stays under the 2 s hard budget. Next optimisation: cheaper names for links
-  (`textContent` when the element has no hidden descendants).
+  The default snapshot is **10–20× smaller** than the aria snapshot.
+- **Update:** visibility now uses native `element.checkVisibility()`. On Obscura, reading several
+  computed-style properties from one style object costs ~2.2 s on a GitHub page, against 2 ms for
+  `checkVisibility`. Text-only elements are also named with `textContent`. As a result, GitHub on Obscura
+  went from 1,044 ms to **~90 ms**, Wikipedia from 164 to 79 ms, and HN from 92 to 63 ms. The 300 ms target
+  is now met.
 
 ### Collapse, don't delete
 

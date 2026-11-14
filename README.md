@@ -81,7 +81,6 @@ agent ──MCP / CLI / Python──▶  6 tools  ──▶  snapshot · act · 
   promising result, not proof against every browser agent.
 - Obscura 0.2.6 can't upload files, type into rich-text editors, open popups or read cross-origin
   iframes. Those pages run on Chromium automatically.
-- Snapshot time on very large pages is about 1 s on Obscura (GitHub repo page) vs 20 ms on Chromium.
 
 See [`ROADMAP.md`](ROADMAP.md) for what's next.
 
