@@ -108,7 +108,7 @@
       if (el.getAttribute('placeholder')) return clip(el.getAttribute('placeholder'), 60);
       if (el.getAttribute('title')) return clip(el.getAttribute('title'), 60);
       if (tag === 'INPUT' && ['submit', 'button', 'reset'].includes(el.type)) return clip(el.value || el.type, 60);
-      return '';
+      return clip(el.getAttribute('name') || '', 60);  // last resort: the form field name (e.g. "q")
     }
     let t = el.innerText;
     if (t && t.trim()) return clip(t, 60);
@@ -336,6 +336,9 @@
       return s;
     };
     const block = el => {
+      for (const n of el.childNodes) {  // bare text directly in a block (e.g. a JSON or plain-text response)
+        if (n.nodeType === 3 && n.nodeValue.trim().length > 1) lines.push(clip(n.nodeValue, 3000));
+      }
       for (const c of el.children) {
         const tag = c.tagName;
         if (SKIP.has(tag) || c.hidden || c.getAttribute('aria-hidden') === 'true' || !visible(c)) continue;
