@@ -563,6 +563,18 @@ class Session:
             states[expect["id"]] = await self._target_state(ts, expect["id"])
         after = await self._take(ts)
         d = diff(before, after)
+        if d == "" and expect and expect.get("action") in ("click", "press") and not ts.notes:
+            # Nothing changed in this tab. A popup's "page" event can arrive after settle on slow machines,
+            # so give a new tab a short grace period before reporting "no visible change". Clicks that did
+            # change something never wait.
+            for _ in range(15):
+                if len(self.tabs) > tabs_before:
+                    nts = self.cur
+                    await settle(nts.page, cap_s=self.settle_cap_s)
+                    note = self._drain(ts)
+                    return ("status: verified (new tab opened)\n" + prefix + (note + "\n" if note else "")
+                            + self._render_full(nts, await self._take(nts)))
+                await asyncio.sleep(0.1)
         notes = self._drain(ts)
         page_changed = d is None
         changed = page_changed or bool(d)

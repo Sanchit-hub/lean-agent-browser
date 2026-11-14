@@ -264,3 +264,15 @@ async def test_confirm_risky_blocks_until_confirmed(base):
         d = await sess.act("click", yes, "confirm")
         assert d.startswith("status: verified") and "looks irreversible" in d
         assert [x["fields"]["deleted"] for x in state(base)["submissions"]] == ["old-report.pdf"]
+
+
+async def test_late_popup_is_still_reported(s):
+    if s.engine != "chromium":
+        pytest.skip("Obscura has no popups (window.open returns null)")
+    out = await s.open(s.base + "/docs.html")
+    # Open the popup 700 ms after the click: longer than settle's quiet window, like a slow CI runner.
+    await s.cur.page.evaluate("""() => { const a = document.querySelector('a[target=_blank]');
+        a.addEventListener('click', e => { e.preventDefault(); setTimeout(() => window.open(a.href, '_blank'), 700); }); }""")
+    d = await s.act("click", idof(out, 'link "Open the developer console"'))
+    assert d.startswith("status: verified (new tab opened)") and len(s.tabs) == 2
+    assert "page: Developer console" in d
