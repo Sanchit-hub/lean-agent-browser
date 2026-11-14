@@ -28,10 +28,11 @@ header: Home, Search, Orders (+5) [expand:h1]
 14: button "Create account"
 ```
 
-Act on an id, and you get back only what changed:
+Act on an id, and you get back a verified status plus only what changed:
 
 ```
 > act fill 10 asha@example.com
+status: verified (value set)
 ~10: textbox "Email"* type=email = "asha@example.com"   (error cleared)
 ```
 
@@ -107,7 +108,7 @@ There are six tools. Their definitions add up to about 515 tokens, and they are 
 |---|---|
 | `open(url, mode?, block?)` | Navigate, then return a snapshot. `mode` is `actions` (default), `read` (markdown) or `full`. |
 | `snapshot(mode?, budget?, expand?, more?, find?)` | Current page. `expand:h1` opens a collapsed group, `more:k1` continues cut-off output, and `find` searches everything, including collapsed rows. |
-| `act(action, id?, value?)` | Actions: `click`, `fill`, `select` (an option label, also works on custom dropdowns), `check`, `uncheck`, `clear`, `press`, `hover`, `focus`, `upload`, `scroll`, `back`, `forward`, `reload`, `wait_for`, `tab` (`list` / `new:URL` / `switch:N` / `close:N`), `dialog` (`accept` / `dismiss` the next native dialog). Returns a diff. |
+| `act(action, id?, value?)` | Actions: `click`, `fill`, `select` (an option label, also works on custom dropdowns), `check`, `uncheck`, `clear`, `press`, `hover`, `focus`, `upload`, `scroll`, `back`, `forward`, `reload`, `wait_for`, `tab` (`list` / `new:URL` / `switch:N` / `close:N`), `dialog` (`accept` / `dismiss` the next native dialog). Returns a status line (`verified` / `unverified` / `timed_out`, with evidence) and a diff. A re-rendered element is re-found once by role and name; if that's ambiguous, nothing is clicked. |
 | `fill_form(fields, submit?)` | `{id: value}` for a whole form in one call. `submit=true` clicks the form's submit button. |
 | `extract(kind?, within?)` | Deterministic JSON for a `table`, `list` or `form` (no LLM involved). |
 | `screenshot(id?)` | Viewport or element PNG. Only for captchas, charts or layout. |
@@ -133,6 +134,7 @@ allowed_domains = []                # e.g. ["example.com"]: refuse to open anyth
 fallback_domains = []               # always use Chromium for these hosts
 allowed_upload_dirs = ["~/Downloads"]
 block = true                        # Chromium: skip images, fonts, media and tracker hosts
+confirm_risky = false               # true: pay/delete/send-like buttons need act(..., value="confirm")
 snapshot_timeout_s = 2.0            # slower snapshots move the page to Chromium
 ```
 

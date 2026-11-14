@@ -26,7 +26,11 @@ failed actions. Every claim needs a reproducible benchmark.
 
 ## Next, in order
 
-### 1. Verified actions and safe recovery
+### 1. Verified actions and safe recovery — **done (2026-11-15)**
+Implemented in `lean_browser/session.py` (`_status`, `_check_value`, `_resolve_or_recover`) with tests in
+`tests/test_session.py`. `ambiguous` and `blocked` come back as errors, and nothing is executed in either
+case. A quick real-agent run (lean, 6 tasks) stayed at 6/6 with tokens within normal run-to-run variation.
+The original plan:
 Every action returns a structured status: `verified`, `unverified`, `ambiguous`, `blocked` or
 `timed_out`, plus evidence (URL changed, new heading, field value, error text).
 - **Stale ids:** refresh the snapshot, re-resolve only when the role, name and surroundings still

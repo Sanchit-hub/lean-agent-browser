@@ -136,7 +136,7 @@ async def test_lean_eval_loop_offline(base, mode):
 
 
 async def test_lean_escalate_appends_full_snapshot(base):
-    client = FakeClient([("act", {"action": "focus", "id": 9}), ("answer", {"text": "done"})])
+    client = FakeClient([("act", {"action": "press", "id": 9, "value": "Shift"}), ("answer", {"text": "done"})])
     await runner.run_lean_task(client, base, BY_ID["login"], "lean-escalate", 1, False, lambda r: None)
     msgs = client.seen[-1]["messages"]  # live list: also holds the later answer turn
     results = [m["content"][0]["content"] for m in msgs if m["role"] == "user" and isinstance(m["content"], list)

@@ -62,6 +62,7 @@ class Config:
     fallback_domains: list[str] = field(default_factory=list)
     allowed_upload_dirs: list[str] = field(default_factory=lambda: ["~/Downloads"])
     block: bool = True
+    confirm_risky: bool = False         # require act(..., value="confirm") for pay/delete/send-like buttons
     snapshot_timeout_s: float = 2.0
     nav_timeout_ms: int = 20000
 
@@ -98,7 +99,8 @@ class LeanBrowser:
                                  fallback_domains=c.fallback_domains, nav_timeout_ms=c.nav_timeout_ms,
                                  init_scripts=[SETTLE_INIT_JS], obscura_init_scripts=[OBSCURA_DIALOG_SHIM],
                                  block=c.block)
-        self.session = Session(self.bm, upload_dirs=c.allowed_upload_dirs, snapshot_timeout_s=c.snapshot_timeout_s)
+        self.session = Session(self.bm, upload_dirs=c.allowed_upload_dirs, snapshot_timeout_s=c.snapshot_timeout_s,
+                               confirm_risky=c.confirm_risky)
 
     async def __aenter__(self):
         await self.bm.start()

@@ -255,7 +255,8 @@ async def _tool_loop(client, task, mode_name: str, run: int, cached: bool, tools
             except Exception as e:
                 blocks, is_err = [{"type": "text", "text": f"Error: {type(e).__name__}: {str(e)[:200]}"}], True
             text = " ".join(b.get("text", "") for b in blocks)
-            failed = is_err or text.startswith("Error:") or "no change. hint" in text
+            failed = is_err or text.startswith("Error:") or "no change. hint" in text \
+                or "status: unverified" in text or "status: timed_out" in text
             if failed:
                 res.errors.append(f"{c.name}: {text[:120]}")
                 if on_fail:

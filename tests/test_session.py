@@ -50,13 +50,14 @@ async def test_fill_diff_and_inline_errors(s):
     out = await s.open(s.base + "/signup.html")
     email, pw, submit = idof(out, 'textbox "Email"'), idof(out, 'textbox "Password"'), idof(out, 'button "Create account"')
     d = await s.act("fill", email, "asha@")
-    assert d == f'~{email}: textbox "Email"* type=email = "asha@"'
+    assert d == f'status: verified (value set)\n~{email}: textbox "Email"* type=email = "asha@"'
     d = await s.act("click", submit)
+    assert d.startswith("status: verified (changes below)")
     assert f'~{email}: textbox "Email"* type=email = "asha@" !"Enter a valid email address"   (error appeared)' in d
     d = await s.act("fill", pw, "secret-password-1")
     assert "secret-password-1" not in d and "••••" in d
     d = await s.act("fill", email, "asha@example.com")
-    assert d.startswith(f'~{email}: textbox "Email"* type=email = "asha@example.com"')
+    assert d.splitlines()[1].startswith(f'~{email}: textbox "Email"* type=email = "asha@example.com"')
 
 
 async def test_fill_form_submit_navigates(s):
@@ -157,7 +158,7 @@ async def test_upload_on_chromium_and_guard(s):
 
 async def test_no_change_hint_missing_id_and_wait_for(s):
     out = await s.open(s.base + "/login.html")
-    assert (await s.act("focus", idof(out, 'textbox "Username"'))).startswith("no change")
+    assert (await s.act("focus", idof(out, 'textbox "Username"'))).startswith("status: done")
     with pytest.raises(ActionError, match="not found"):
         await s.act("click", 9999)
     out = await s.open(s.base + "/feed.html")
@@ -195,3 +196,71 @@ async def test_snapshot_timeout_moves_tab_to_chromium(base):
         sess = Session(bm, snapshot_timeout_s=0.0001)
         out = await sess.open(base + "/login.html")
         assert "engine: chromium (snapshot too slow)" in out
+
+
+async def test_status_lines_for_values_and_forms(s):
+    out = await s.open(s.base + "/apply.html")
+    role = idof(out, 'select "Role"')
+    assert (await s.act("select", role, "ML Intern")).startswith('status: verified ("ML Intern" selected)')
+    reloc = idof(out, 'checkbox "Willing to relocate"')
+    assert (await s.act("check", reloc)).startswith("status: verified (checked)")
+    out = await s.open(s.base + "/login.html")
+    res = await s.fill_form({idof(out, 'textbox "Username"'): "demo", idof(out, 'textbox "Password"'): "demo-pass-123"},
+                            submit=True)
+    assert res.startswith("status: verified (2/2 fields set; submitted, page changed: /account)")
+
+
+async def test_click_without_effect_is_unverified(s):
+    out = await s.open(s.base + "/misc.html")
+    # "Pricing" goes to /dup, a 404 page, so the page does change; use the heading-less status text instead:
+    out = await s.open(s.base + "/todo.html")
+    clear = idof(out, 'button "Clear completed"')
+    await s.act("click", clear)                  # clears the two completed tasks
+    await s.act("dialog", value="dismiss")
+    d = await s.act("click", clear)              # dismissed confirm -> "Cancelled" text appears
+    assert d.startswith("status: verified")
+    out = await s.open(s.base + "/booking.html")
+    guests = idof(out, 'textbox "Guests"')
+    await s.act("fill", guests, "3")
+    d = await s.act("press", guests, "Shift")   # a key that changes nothing
+    assert d.startswith("status: unverified (no visible change)") and "hint:" in d
+
+
+async def test_stale_id_recovered_once_when_unambiguous(s):
+    out = await s.open(s.base + "/app.html#/settings")
+    save = idof(out, 'button "Save changes"')
+    # Re-create the node behind the agent's back without a new snapshot, so the old id is stale.
+    await s.cur.page.evaluate("""() => { const b = [...document.querySelectorAll('button')].find(x => x.textContent.includes('Save'));
+        const c = b.cloneNode(true); delete c.dataset.labId; b.replaceWith(c); }""")
+    d = await s.act("click", save)
+    assert d.startswith("status: verified")
+    assert f"recovered: id {save} was re-rendered as" in d and "Saved" in d
+
+
+async def test_stale_id_ambiguous_is_not_guessed(s):
+    out = await s.open(s.base + "/login.html")
+    btn = idof(out, 'button "Log in"')
+    await s.cur.page.evaluate("""() => { const b = document.querySelector('main button');
+        const c1 = b.cloneNode(true), c2 = b.cloneNode(true); delete c1.dataset.labId; delete c2.dataset.labId;
+        b.replaceWith(c1); c1.after(c2); }""")
+    with pytest.raises(ActionError, match="ambiguous: id .* 2 elements match button \"Log in\""):
+        await s.act("click", btn)
+    assert state(s.base)["submissions"] == []   # nothing was clicked
+
+
+async def test_confirm_risky_blocks_until_confirmed(base):
+    urllib.request.urlopen(base + "/api/reset").read()
+    async with BrowserManager(allow_private_network=True, prefer="chromium", init_scripts=[SETTLE_INIT_JS]) as bm:
+        sess = Session(bm, confirm_risky=True)
+        out = await sess.open(base + "/files.html")
+        opener = idof(out, 'button "Delete old-report.pdf"')
+        with pytest.raises(ActionError, match='blocked: button "Delete old-report.pdf" looks irreversible'):
+            await sess.act("click", opener)
+        d = await sess.act("click", opener, "confirm")
+        yes = idof(d, 'button "Delete"')
+        with pytest.raises(ActionError, match='blocked: button "Delete" looks irreversible'):
+            await sess.act("click", yes)
+        assert state(base)["submissions"] == []
+        d = await sess.act("click", yes, "confirm")
+        assert d.startswith("status: verified") and "looks irreversible" in d
+        assert [x["fields"]["deleted"] for x in state(base)["submissions"]] == ["old-report.pdf"]

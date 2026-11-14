@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -102,7 +103,29 @@ OBSCURA_DIALOG_SHIM = r"""
 
 TRUTHY = {"true", "on", "yes", "1", "checked", "y"}
 NEEDS_ID = {"click", "hover", "check", "uncheck", "clear", "focus", "fill", "select", "upload"}
-NO_CHANGE_HINT = 'no change. hint: try snapshot(mode="full") or screenshot(id)'
+NO_CHANGE_HINT = 'hint: try snapshot(mode="full") or screenshot(id)'
+
+# Buttons/links whose name suggests a hard-to-undo effect. With confirm_risky=True, clicking one needs
+# value="confirm"; without it the result still says "looks irreversible" so the agent can double-check.
+RISKY = re.compile(r"\b(pay|buy|purchase|place order|checkout|delete|remove|send|transfer|submit payment|"
+                   r"confirm (?:order|payment|purchase)|close account|unsubscribe)\b", re.I)
+
+TARGET_STATE_JS = r"""el => {
+  const radio = () => { if (el.type !== 'radio') return null;
+    const scope = el.form || el.getRootNode();
+    const r = [...scope.querySelectorAll(`input[type=radio][name="${CSS.escape(el.name)}"]`)].find(x => x.checked);
+    if (!r) return '';
+    const l = (r.id && r.getRootNode().querySelector(`label[for="${CSS.escape(r.id)}"]`)) || r.closest('label');
+    return ((l && l.textContent) || r.value || '').replace(/\s+/g, ' ').trim(); };
+  return { connected: el.isConnected, type: (el.getAttribute('type') || '').toLowerCase(),
+    value: typeof el.value === 'string' ? el.value : null,
+    checked: typeof el.checked === 'boolean' ? el.checked : null,
+    selected: el.tagName === 'SELECT' && el.selectedIndex >= 0 ? el.options[el.selectedIndex].text.trim() : null,
+    text: el.isContentEditable ? (el.innerText || '').trim() : (el.getAttribute('role') === 'combobox' ? (el.innerText || '').trim() : null),
+    radio: radio(), files: el.files ? el.files.length : null };
+}"""
+
+_norm = lambda x: " ".join(str(x or "").split()).lower()
 
 
 class ActionError(Exception):
@@ -153,8 +176,9 @@ def _short(e: Exception) -> str:
 
 class Session:
     def __init__(self, bm: BrowserManager, *, upload_dirs: list[str | Path] | None = None,
-                 snapshot_timeout_s: float = 2.0, settle_cap_s: float = 5.0):
+                 snapshot_timeout_s: float = 2.0, settle_cap_s: float = 5.0, confirm_risky: bool = False):
         self.bm = bm
+        self.confirm_risky = confirm_risky
         self.tabs: list[TabState] = []
         self.active = -1
         self.upload_dirs = [Path(p).expanduser().resolve() for p in (upload_dirs or ["~/Downloads"])]
@@ -425,10 +449,72 @@ class Session:
         ts = self.cur
         before = ts.snapper.last or await self._take(ts)
         entry = _index(before).get(int(id)) if id is not None else None
+        note = ""
+        if id is not None and action != "scroll":
+            id, before, entry, note = await self._resolve_or_recover(ts, int(id), before, entry)
+        name = (entry or {}).get("name", "")
+        risky = action in ("click", "press") and bool(RISKY.search(name or ""))
+        if risky and self.confirm_risky and str(value or "").lower() != "confirm":
+            raise ActionError(f'blocked: {(entry or {}).get("role", "element")} "{name}" looks irreversible; '
+                              'call act again with value="confirm" to proceed')
         tabs_before = len(self.tabs)
         await self._sync_dialog_policy(ts)
-        await self._perform(ts, action, id, value, entry)
-        return await self._after(ts, before, tabs_before)
+        await self._perform(ts, action, id, value if action != "click" else None, entry)
+        expect = {"kind": "action", "action": action, "id": id, "value": value, "entry": entry, "risky": risky}
+        return await self._after(ts, before, tabs_before, note, expect)
+
+    async def _resolve_or_recover(self, ts: TabState, el_id: int, before: Snapshot, entry: dict | None):
+        """If the id's element is gone (framework re-render), re-resolve it ONCE by role + name on a fresh
+        snapshot. Only an unambiguous match is used; nothing has been executed yet at this point."""
+        h = await ts.page.evaluate_handle(RESOLVE_JS, el_id)
+        if h.as_element():
+            return el_id, before, entry, ""
+        if not entry:
+            raise ActionError(f"id {el_id} not found (page changed?) — call snapshot()")
+        fresh = await self._take(ts)
+        idx = _index(fresh)
+        cands = {e["id"]: e for e in idx.values()
+                 if e["role"] == entry["role"] and e.get("name") == entry.get("name")
+                 and e.get("_option") == entry.get("_option")}
+        role, nm = entry["role"], entry.get("name", "")
+        if len(cands) == 1:
+            new = next(iter(cands.values()))
+            return new["id"], fresh, new, f'recovered: id {el_id} was re-rendered as {new["id"]} (same {role} "{nm}")\n'
+        if len(cands) > 1:
+            raise ActionError(f'ambiguous: id {el_id} is gone and {len(cands)} elements match {role} "{nm}" '
+                              f"(ids {', '.join(map(str, sorted(cands)))}) — pick one")
+        raise ActionError(f'id {el_id} is gone: {role} "{nm}" is no longer on the page — call snapshot()')
+
+    async def _target_state(self, ts: TabState, el_id) -> dict | None:
+        try:
+            el = (await ts.page.evaluate_handle(RESOLVE_JS, int(el_id))).as_element()
+            return await el.evaluate(TARGET_STATE_JS) if el else None
+        except Exception:
+            return None
+
+    def _check_value(self, action: str, value, entry: dict | None, st: dict | None, after_entry: dict | None) -> tuple[bool, str]:
+        """Did the field end up in the requested state? Returns (ok, reason)."""
+        role = (entry or {}).get("role")
+        if st is None:
+            return False, "element disappeared after the action"
+        if action in ("fill", "clear"):
+            want = "" if action == "clear" else str(value if value is not None else "")
+            got = st["value"] if st["value"] is not None else (st["text"] or "")
+            if got == want or (st["text"] is not None and _norm(got) == _norm(want)):
+                return True, "value set"
+            if st["type"] == "password":
+                return False, "value differs from what was typed"
+            return False, f'value is "{got[:40]}", expected "{want[:40]}"'
+        if action == "select":
+            got = st["selected"] or st["radio"] or (after_entry or {}).get("val") or st["text"] or ""
+            ok = _norm(value) in _norm(got) or _norm(got) in _norm(value) and bool(got)
+            return (True, f'"{got}" selected') if ok else (False, f'selected is "{got}", expected "{value}"')
+        if action in ("check", "uncheck"):
+            want = action == "check"
+            return (True, "checked" if want else "unchecked") if st["checked"] == want else (False, f"checked={st['checked']}")
+        if action == "upload":
+            return (True, "file attached") if st["files"] else (False, "no file attached")
+        return True, ""
 
     async def _sync_dialog_policy(self, ts: TabState):
         if ts.tab.engine == "obscura":
@@ -449,24 +535,69 @@ class Session:
         if log:
             ts.dialog_policy = "accept"
 
-    async def _after(self, ts: TabState, before: Snapshot, tabs_before: int, prefix: str = "") -> str:
+    async def _after(self, ts: TabState, before: Snapshot, tabs_before: int, prefix: str = "",
+                     expect: dict | None = None) -> str:
         await asyncio.sleep(0.05)
         settled = await settle(ts.page, cap_s=self.settle_cap_s)
-        loading = "" if settled else "(still loading)\n"
         if len(self.tabs) > tabs_before:
             nts = self.cur
             await settle(nts.page, cap_s=self.settle_cap_s)
             note = self._drain(ts)
-            return prefix + loading + (note + "\n" if note else "") + self._render_full(nts, await self._take(nts))
+            status = "status: verified (new tab opened)\n" if expect else ""
+            return status + prefix + (note + "\n" if note else "") + self._render_full(nts, await self._take(nts))
         await self._drain_dialog_shim(ts)
+        # Field states are read before the after-snapshot so they describe the same moment.
+        states = {}
+        if expect and expect["kind"] == "action" and expect["action"] in ("fill", "clear", "select", "check", "uncheck", "upload"):
+            states[expect["id"]] = await self._target_state(ts, expect["id"])
         after = await self._take(ts)
         d = diff(before, after)
         notes = self._drain(ts)
-        head = prefix + loading + (notes + "\n" if notes else "")
-        if d is None:
+        page_changed = d is None
+        changed = page_changed or bool(d)
+        status = self._status(expect, states, after, page_changed, changed, settled, bool(notes)) if expect else ""
+        head = status + prefix + (notes + "\n" if notes else "")
+        if page_changed:
             return head + ts.snapper.render(after, skip_unchanged=False)
         ts.snapper.render(after)  # updates the unchanged-hash so the next snapshot() can say "unchanged"
-        return head + (d if d else NO_CHANGE_HINT)
+        if not d:
+            return (head + NO_CHANGE_HINT) if expect else (head + "no change. " + NO_CHANGE_HINT)
+        return head + d
+
+    def _status(self, expect: dict, states: dict, after: Snapshot, page_changed: bool, changed: bool,
+                settled: bool, dialog: bool) -> str:
+        after_idx = _index(after)
+        evidence: list[str] = []
+        if page_changed:
+            evidence.append(f"page changed: {after.data.get('path')}")
+        elif after.data.get("routeChanged"):
+            evidence.append(f"route changed: {after.data.get('path')}")
+        if expect["kind"] == "form":
+            ok_n, n, problems = expect["ok"], expect["n"], expect["problems"]
+            parts = [f"{ok_n}/{n} fields set"] + problems
+            ok = ok_n == n
+            if expect["submitted"]:
+                parts.append("submitted" + (f", {evidence[0]}" if evidence else (", page updated" if changed else ", no visible change")))
+                ok = ok and changed
+            word = "verified" if ok else ("timed_out" if not settled else "unverified")
+            return f"status: {word} ({'; '.join(parts)})\n"
+        action, el_id = expect["action"], expect["id"]
+        if action in ("fill", "clear", "select", "check", "uncheck", "upload"):
+            ok, reason = self._check_value(action, expect["value"], expect["entry"], states.get(el_id), after_idx.get(el_id))
+            evidence.insert(0, reason)
+            err = (after_idx.get(el_id) or {}).get("err")
+            if err:
+                evidence.append(f'field shows error "{err}"')
+        elif action in ("hover", "focus", "scroll"):
+            return "status: done\n"
+        else:  # click / press: success means something observable happened
+            ok = changed or dialog
+            if not evidence:
+                evidence.append("dialog shown" if dialog and not changed else ("changes below" if changed else "no visible change"))
+        if expect.get("risky"):
+            evidence.append("looks irreversible")
+        word = "verified" if ok else ("timed_out" if not settled else "unverified")
+        return f"status: {word} ({'; '.join(e for e in evidence if e)})\n"
 
     async def fill_form(self, fields: dict, submit=False) -> str:
         ts = self.cur
@@ -491,6 +622,19 @@ class Session:
                     await self._perform(ts, "fill", fid, value, e)
             except ActionError as err:
                 errors.append(f"{fid}: {err}")
+        problems, ok_n = [], 0
+        for raw_id, value in fields.items():
+            fid = int(raw_id)
+            e = idx.get(fid)
+            role = (e or {}).get("role")
+            act_ = ("check" if (value is True or str(value).strip().lower() in TRUTHY) else "uncheck") if role in ("checkbox", "switch") \
+                else "select" if role in ("select", "radiogroup") or (role == "combobox" and (e or {}).get("custom")) \
+                else "upload" if role == "upload" else "fill"
+            ok, reason = self._check_value(act_, value, e, await self._target_state(ts, fid), None)
+            if ok:
+                ok_n += 1
+            elif not any(x.startswith(f"{fid}:") for x in errors):
+                problems.append(f"{fid}: {reason}")
         if submit and not errors:
             if submit is True:
                 first = await self._handle(ts, int(next(iter(fields))))
@@ -505,7 +649,9 @@ class Session:
                 except ActionError as err:
                     errors.append(f"submit: {err}")
         prefix = ("errors:\n" + "\n".join(errors) + "\n") if errors else ""
-        return await self._after(ts, before, tabs_before, prefix)
+        expect = {"kind": "form", "ok": ok_n, "n": len(fields), "problems": problems,
+                  "submitted": bool(submit) and not errors}
+        return await self._after(ts, before, tabs_before, prefix, expect)
 
     async def extract(self, kind: str = "auto", within: int | None = None) -> dict:
         ts = self.cur
