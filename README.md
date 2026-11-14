@@ -21,10 +21,17 @@ header: Home, Search, Orders (+5) [expand:h1]
 ~10: textbox "Email"* type=email = "asha@example.com"   (error cleared)
 ```
 
-**Measured so far** (default snapshot vs Playwright's aria snapshot, tiktoken proxy): GitHub repo
-page 949 vs 19,298 tokens, Wikipedia 954 vs 19,338, Hacker News 959 vs 10,263. Obscura also uses
-about 3× less memory than Chromium on real pages. Whole-task numbers come from the eval harness
-(`evals/`), which needs an Anthropic API key. See `SPEC.md` and `spike/FINDINGS.md` for the details.
+**Measured with a real agent** (Claude Sonnet 5.5, 18 tasks × 3 runs, success checked by the server; see
+`evals/CHANGELOG.md`):
+
+| | Success | Median tokens per task | Mean turns | Mean time |
+|---|---|---|---|---|
+| Playwright MCP | 54/54 | 48,576 | 7.5 | 18.6 s |
+| **Lean** | **54/54** | **11,572** | **5.1** | **11.0 s** |
+
+That is the same success rate with 4.5× fewer tokens. On real pages the default snapshot is 10–20× smaller than
+Playwright's aria snapshot (GitHub: 949 vs 19,298 tokens), and Obscura uses about 3× less memory than
+Chromium. See `SPEC.md` and `spike/FINDINGS.md` for the details.
 
 ## Install (macOS, Apple Silicon)
 
@@ -110,6 +117,17 @@ ignored), or a cross-origin iframe. A page also moves to Chromium if a snapshot 
 comes from a test in `spike/FINDINGS.md`.
 
 ## Evals
+
+**No API key? Use your Claude subscription.** `evals/claude_driver.py` runs the same tasks with the
+Claude Code CLI (`claude -p`) as the agent. Built-in tools are disabled, only the browser MCP server
+under test is attached, and the system prompt is our own:
+
+```bash
+.venv/bin/python -m evals.claude_driver --quick      # 6 tasks: Playwright MCP vs lean
+.venv/bin/python -m evals.claude_driver --runs 3     # all 18 tasks x 2 modes x 3 runs
+```
+
+**With an API key** (in your environment, or in the gitignored, `chmod 600` file `.env`):
 
 ```bash
 export ANTHROPIC_API_KEY=...

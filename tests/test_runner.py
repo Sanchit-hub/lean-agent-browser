@@ -95,3 +95,21 @@ def test_report(tmp_path):
     out = write_report(d)
     text = out.read_text()
     assert "| html | 1/1 (100%) | 930 |" in text
+
+
+def test_dotenv_loader(tmp_path, monkeypatch):
+    import os
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    f = tmp_path / ".env"
+    f.write_text("# comment\nANTHROPIC_API_KEY=\nsk-ant-api03-TESTVALUE\n")
+    f.chmod(0o600)
+    runner._load_dotenv(f)
+    assert os.environ["ANTHROPIC_API_KEY"] == "sk-ant-api03-TESTVALUE"   # key pasted on the next line
+    monkeypatch.delenv("ANTHROPIC_API_KEY")
+    f.write_text('ANTHROPIC_API_KEY="sk-ant-api03-OTHER"\n')
+    runner._load_dotenv(f)
+    assert os.environ["ANTHROPIC_API_KEY"] == "sk-ant-api03-OTHER"
+    monkeypatch.delenv("ANTHROPIC_API_KEY")
+    f.chmod(0o644)
+    with pytest.raises(SystemExit, match="chmod 600"):
+        runner._load_dotenv(f)

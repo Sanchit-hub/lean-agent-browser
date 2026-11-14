@@ -581,10 +581,16 @@ After every step from 3 onward, re-run the eval and note the change in `evals/CH
 
 ### Build status (2026-11-14)
 
-Steps 0–6 and 8 are done. All ~135 tests pass.
+Steps 0–8 are done. All ~135 tests pass.
 
-**Step 7, the full eval run, has not been done.** It needs `ANTHROPIC_API_KEY`, and
-`evals/CHANGELOG.md` will start with that first run.
+**Step 7, the eval, ran on 2026-11-15** with Claude Sonnet 5.5 via `claude -p`, because no API key
+was available (`evals/claude_driver.py`). It covered lean vs Playwright MCP, 18 tasks × 3 runs:
+- both modes passed 54/54;
+- lean's median tokens were 24% of Playwright MCP's, so the pass bar is met;
+- lean used 4.5× fewer tokens in total, half the cost, and 1.7× less time.
+
+Full results are in `evals/CHANGELOG.md`. The screenshot, HTML and raw-aria baselines still need the
+API runner and an account with API credits.
 
 Polish (step 8) notes:
 - **`install.sh` deviates from the plan:** it uses `python -m venv` + pip with pinned versions

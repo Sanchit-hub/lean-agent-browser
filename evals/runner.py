@@ -35,6 +35,32 @@ from lean_browser.tools import TOOLS as LEAN_TOOLS
 from lean_browser.tools import Config as LeanConfig
 from lean_browser.tools import LeanBrowser
 
+def _load_dotenv(f: Path | None = None) -> None:
+    """If ANTHROPIC_API_KEY is not in the environment, read it from the repo's gitignored .env
+    (must be private to the user: chmod 600). Only that one variable is read."""
+    import os
+    import stat
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        return
+    f = f or Path(__file__).resolve().parent.parent / ".env"
+    if not f.is_file():
+        return
+    if f.stat().st_mode & (stat.S_IRWXG | stat.S_IRWXO):
+        sys.exit(f"{f} is readable by other users; run: chmod 600 {f}")
+    lines = [l.strip() for l in f.read_text().splitlines()]
+    for i, line in enumerate(lines):
+        k, _, v = line.partition("=")
+        if k.strip() != "ANTHROPIC_API_KEY":
+            continue
+        v = v.strip().strip('"').strip("'")
+        if not v and i + 1 < len(lines) and lines[i + 1].startswith("sk-ant-") and "=" not in lines[i + 1]:
+            v = lines[i + 1]  # key pasted on the line below "ANTHROPIC_API_KEY="
+        if v:
+            os.environ["ANTHROPIC_API_KEY"] = v
+
+
+_load_dotenv()
+
 LEAN_MODES = {"lean": False, "lean-escalate": True}  # name -> auto-escalate on failure
 ALL_MODES = [*MODES, "playwright-mcp", *LEAN_MODES]
 
@@ -396,6 +422,11 @@ async def amain(args):
         await client.messages.count_tokens(model=CONFIG["model"], messages=[{"role": "user", "content": "ping"}])
     except anthropic.AuthenticationError:
         sys.exit(no_creds)
+    except anthropic.BadRequestError as e:
+        if "credit balance" in str(e).lower():
+            sys.exit("Your Anthropic account has no API credits. Add credits under Plans & Billing in the "
+                     "Anthropic Console, then retry.")
+        raise
     except TypeError as e:  # raised by the SDK when no credential source resolves at all
         if "authentication" in str(e).lower():
             sys.exit(no_creds)

@@ -7,3 +7,4 @@ spike/results/
 .pytest_cache/
 .playwright-mcp/
 *.egg-info/
+.env
