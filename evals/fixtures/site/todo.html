@@ -1,0 +1,14 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Tasks</title><link rel="stylesheet" href="/style.css"></head><body><!--NAV-->
+<main><h1>Tasks</h1><ul id="list"></ul><button id="clear">Clear completed</button><p id="msg" role="status"></p></main><!--FOOTER-->
+<script>
+let items = [{t:'Buy milk',d:true},{t:'Call bank',d:false},{t:'Pay rent',d:true},{t:'Book tickets',d:false}];
+const draw = () => document.getElementById('list').innerHTML = items.map(i => `<li>${i.d ? '☑' : '☐'} ${i.t}</li>`).join('');
+draw();
+document.getElementById('clear').onclick = async () => {
+  if (!confirm('Clear all completed tasks?')) { document.getElementById('msg').textContent = 'Cancelled'; return; }
+  const removed = items.filter(i => i.d).map(i => i.t);
+  items = items.filter(i => !i.d); draw();
+  await fetch('/api/submit/todo', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({removed})});
+  document.getElementById('msg').textContent = `Cleared ${removed.length} tasks`;
+};
+</script></body></html>

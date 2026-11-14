@@ -1,0 +1,23 @@
+<!doctype html><html><head><meta charset="utf-8"><title>My files</title><link rel="stylesheet" href="/style.css"></head><body><!--NAV-->
+<main><h1>My files</h1><table><tbody id="rows"></tbody></table><p id="msg" role="status"></p></main><!--FOOTER-->
+<div class="overlay hidden" id="ov"><div class="modal" role="dialog" aria-label="Confirm delete">
+<p id="q"></p><button id="yes">Delete</button> <button id="no">Cancel</button></div></div>
+<script>
+let files = ['q3-report.pdf', 'old-report.pdf', 'budget-2026.xlsx', 'team-photo.png', 'notes.txt'];
+let pending = null;
+const draw = () => document.getElementById('rows').innerHTML = files.map(f =>
+  `<tr><td>${f}</td><td><button class="del" data-f="${f}" aria-label="Delete ${f}">Delete</button></td></tr>`).join('');
+draw();
+document.getElementById('rows').addEventListener('click', e => {
+  const b = e.target.closest('.del'); if (!b) return;
+  pending = b.dataset.f; document.getElementById('q').textContent = `Delete “${pending}” permanently?`;
+  document.getElementById('ov').classList.remove('hidden');
+});
+document.getElementById('no').onclick = () => { pending = null; document.getElementById('ov').classList.add('hidden'); };
+document.getElementById('yes').onclick = async () => {
+  await fetch('/api/submit/files', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({deleted: pending})});
+  files = files.filter(f => f !== pending); draw();
+  document.getElementById('msg').textContent = `Deleted ${pending}`; pending = null;
+  document.getElementById('ov').classList.add('hidden');
+};
+</script></body></html>

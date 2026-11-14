@@ -1,0 +1,33 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Dashboard</title><link rel="stylesheet" href="/style.css"></head><body>
+<div id="root"></div>
+<script>
+// React-style SPA: one delegated listener, the whole tree re-rendered on every state change.
+const st = {route: location.hash || '#/home', name: 'Asha', saved: false, theme: 'light', draft: null};
+const root = document.getElementById('root');
+function render() {
+  let main;
+  if (st.route === '#/settings') {
+    const v = st.draft ?? st.name;
+    main = `<h1>Settings</h1>
+      <label>Display name <input data-k="name" value="${v}"></label>
+      <label>Theme <select data-k="theme">${['light','dark'].map(t => `<option ${t===st.theme?'selected':''}>${t}</option>`).join('')}</select></label>
+      <button data-act="save">Save changes</button> ${st.saved ? '<span role="status">Saved ✓</span>' : ''}`;
+  } else {
+    main = `<h1>Hello, ${st.name}</h1><p>You have 3 new notifications.</p>`;
+  }
+  root.innerHTML = `<nav><a href="#/home" data-act="nav">Home</a> <a href="#/settings" data-act="nav">Settings</a></nav><main>${main}</main>`;
+}
+root.addEventListener('click', async e => {
+  const t = e.target.closest('[data-act]'); if (!t) return;
+  if (t.dataset.act === 'nav') { e.preventDefault(); history.pushState({}, '', t.getAttribute('href')); st.route = t.getAttribute('href'); st.saved = false; st.draft = null; }
+  if (t.dataset.act === 'save') {
+    st.name = st.draft ?? st.name;
+    await fetch('/api/submit/spa', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({name: st.name, theme: st.theme})});
+    st.saved = true; st.draft = null;
+  }
+  render();
+});
+root.addEventListener('input', e => { if (e.target.dataset.k === 'name') st.draft = e.target.value; });
+root.addEventListener('change', e => { if (e.target.dataset.k === 'theme') { st.theme = e.target.value; render(); } });
+render();
+</script></body></html>

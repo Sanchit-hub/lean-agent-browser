@@ -1,0 +1,17 @@
+body{font-family:system-ui,sans-serif;margin:0;color:#222}
+header nav,footer{padding:8px 16px;background:#f3f3f3}
+header nav a,footer a{margin-right:10px}
+main{padding:16px;max-width:760px}
+label{display:block;margin:8px 0}
+.err{color:#b00020;font-size:13px}
+.hidden{display:none !important}
+table{border-collapse:collapse}td,th{border:1px solid #ccc;padding:4px 8px}
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:10}
+.modal{background:#fff;padding:20px;border-radius:8px;max-width:360px}
+.combo{border:1px solid #888;padding:6px;width:220px;cursor:pointer;background:#fff}
+.opts{border:1px solid #ccc;width:220px;background:#fff}
+.opt{padding:6px;cursor:pointer}.opt:hover{background:#eef}
+.cal{display:grid;grid-template-columns:repeat(7,36px);gap:4px}
+.cal button{width:36px;height:30px}
+.item{padding:24px;border-bottom:1px solid #eee}
+.editor{border:1px solid #888;min-height:80px;padding:8px}

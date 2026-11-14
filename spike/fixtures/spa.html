@@ -1,0 +1,56 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Mini SPA</title>
+<style>
+  .opt { padding: 4px; cursor: pointer; }
+  .combo { cursor: pointer; border: 1px solid #999; padding: 4px; width: 200px; }
+  .list { border: 1px solid #ccc; width: 200px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+  // React-style: one delegated click handler on the root, nodes re-created on every render.
+  const state = { route: location.hash || '#/home', city: null, open: false, items: null, count: 0 };
+  const root = document.getElementById('root');
+  function render() {
+    let body = '';
+    if (state.route === '#/home') {
+      body = `
+        <h1>Home</h1>
+        <button data-act="inc">Clicked ${state.count}</button>
+        <div class="combo" data-act="toggle" role="combobox" aria-expanded="${state.open}">${state.city || 'Choose city'}</div>
+        ${state.open ? `<div class="list" role="listbox">
+          ${['Delhi','Mumbai','Bangalore'].map(c => `<div class="opt" role="option" data-act="pick" data-v="${c}">${c}</div>`).join('')}
+        </div>` : ''}
+        <a href="#/items" data-act="nav">Go to items</a>`;
+    } else {
+      body = `<h1>Items</h1>
+        ${state.items ? `<ul>${state.items.map(i => `<li>${i.name}</li>`).join('')}</ul>` : '<p>Loading…</p>'}
+        <a href="#/home" data-act="nav">Back home</a>`;
+    }
+    root.innerHTML = `<nav><a href="#/home" data-act="nav">Home</a> <a href="#/items" data-act="nav">Items</a></nav><main>${body}</main>`;
+  }
+  root.addEventListener('click', (e) => {
+    const t = e.target.closest('[data-act]');
+    if (!t) return;
+    const act = t.dataset.act;
+    if (act === 'inc') state.count++;
+    if (act === 'toggle') state.open = !state.open;
+    if (act === 'pick') { state.city = t.dataset.v; state.open = false; }
+    if (act === 'nav') {
+      e.preventDefault();
+      history.pushState({}, '', t.getAttribute('href'));
+      state.route = t.getAttribute('href');
+      if (state.route === '#/items' && !state.items) {
+        setTimeout(() => fetch('/api/items').then(r => r.json()).then(j => { state.items = j; render(); }), 400);
+      }
+    }
+    render();
+  });
+  render();
+</script>
+</body>
+</html>

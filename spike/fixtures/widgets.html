@@ -1,0 +1,29 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Widgets</title>
+</head>
+<body>
+<main>
+  <h1>Widgets</h1>
+  <button id="confirm-btn" onclick="document.getElementById('out').textContent = confirm('Delete?') ? 'confirmed' : 'cancelled'">Delete item</button>
+  <span id="out"></span>
+  <button id="popup-btn" onclick="window.open('/form.html', '_blank')">Open form in new tab</button>
+  <div id="editor" contenteditable="true" style="border:1px solid #999;min-height:40px">Start typing…</div>
+  <my-card></my-card>
+  <iframe id="frame" src="/frame-inner.html" style="width:400px;height:120px"></iframe>
+</main>
+<script>
+  class MyCard extends HTMLElement {
+    constructor() {
+      super();
+      const s = this.attachShadow({ mode: 'open' });
+      s.innerHTML = `<p>Shadow card</p><button id="shadow-btn">Shadow button</button><span id="shadow-out"></span>`;
+      s.getElementById('shadow-btn').onclick = () => { s.getElementById('shadow-out').textContent = 'shadow clicked'; };
+    }
+  }
+  customElements.define('my-card', MyCard);
+</script>
+</body>
+</html>

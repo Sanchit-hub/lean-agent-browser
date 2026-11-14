@@ -1,0 +1,17 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Feed</title><link rel="stylesheet" href="/style.css"></head><body><!--NAV-->
+<main><h1>Community feed</h1><div id="list"></div><p id="loading">Scroll for more…</p></main>
+<script>
+let off = 0, busy = false;
+async function more() {
+  if (busy) return; busy = true;
+  const items = await (await fetch('/api/feed?offset=' + off)).json();
+  off += items.length;
+  document.getElementById('list').insertAdjacentHTML('beforeend',
+    items.map(i => `<div class="item"><span class="num">#${i.n}</span> ${i.title}</div>`).join(''));
+  busy = false;
+}
+more();
+window.addEventListener('scroll', () => {
+  if (window.innerHeight + window.scrollY >= document.body.scrollHeight - 200) more();
+});
+</script></body></html>

@@ -1,0 +1,31 @@
+# Tracker/ad hosts blocked on Chromium when blocking is on (subdomains included).
+# Obscura: page.route cannot stop subresources there; use its -stealth build for tracker blocking.
+google-analytics.com
+googletagmanager.com
+doubleclick.net
+googlesyndication.com
+googleadservices.com
+adservice.google.com
+connect.facebook.net
+facebook.net
+hotjar.com
+clarity.ms
+segment.io
+segment.com
+cdn.segment.com
+mixpanel.com
+amplitude.com
+fullstory.com
+scorecardresearch.com
+criteo.com
+criteo.net
+taboola.com
+outbrain.com
+nr-data.net
+quantserve.com
+adsrvr.org
+amazon-adsystem.com
+bat.bing.com
+ads.linkedin.com
+snap.licdn.com
+analytics.tiktok.com

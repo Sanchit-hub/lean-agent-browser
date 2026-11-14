@@ -1,0 +1,12 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Shipping — step 1 of 3</title><link rel="stylesheet" href="/style.css"></head><body><!--NAV-->
+<main><h1>Step 1 of 3: Contact</h1>
+<label>Full name <input id="name"></label>
+<label>Phone <input id="phone" type="tel"></label>
+<button id="next">Next</button></main><!--FOOTER-->
+<script>
+const s = JSON.parse(sessionStorage.wiz || '{}');
+document.getElementById('next').onclick = () => {
+  s.name = document.getElementById('name').value; s.phone = document.getElementById('phone').value;
+  sessionStorage.wiz = JSON.stringify(s); location.href = '/wizard2.html';
+};
+</script></body></html>

@@ -1,0 +1,471 @@
+"""Engine layer: a hardened Obscura process plus a Chromium fallback, behind one interface.
+
+Obscura is the default engine (low memory). Chromium takes over a page when:
+  - the page uses a feature Obscura 0.2.6 cannot handle (routing, decided before any action), or
+  - something already failed on Obscura (fallback).
+See SPEC.md "Engine layer" and spike/FINDINGS.md for the evidence behind each rule.
+"""
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import logging
+import os
+import secrets
+import shutil
+import socket
+import subprocess
+import tempfile
+import time
+from dataclasses import dataclass, field
+from pathlib import Path
+from urllib.parse import urlparse
+
+from playwright.async_api import Browser, BrowserContext, Page, Playwright, async_playwright
+
+log = logging.getLogger("lean_browser.engine")
+
+OBSCURA_VERSION = "0.2.6"
+# SHA256 of the extracted binaries from obscura-aarch64-macos.tar.gz (release digest
+# 19faa248ac762f466ddb822dbb03ed4f097312d10d1a4d5b2143e6040a9bebd0), verified 2026-11-14.
+OBSCURA_SHA256 = {
+    "obscura": "2690b133d1c46b40473e0de31cea53757b5283f5caa8911f738bbb1ac8db036d",
+    "obscura-worker": "7b2e6e0234283b5a18ed03649adcf66aefe90ef43ed3817241e47b63ad59c5a5",
+}
+_REPO = Path(__file__).resolve().parent.parent
+OBSCURA_SEARCH = [
+    Path(os.environ["LEANB_OBSCURA"]) if os.environ.get("LEANB_OBSCURA") else None,
+    Path.home() / ".lean-browser/bin/obscura",
+    _REPO / f".vendor/obscura-v{OBSCURA_VERSION}/bin/obscura",
+]
+
+# JS probe run after navigation on Obscura. Each key maps to a spike-verified failure.
+ROUTING_PROBE = """() => {
+  const vis = el => { const r = el.getBoundingClientRect(); const cs = getComputedStyle(el);
+    return r.width > 0 && r.height > 0 && cs.display !== 'none' && cs.visibility !== 'hidden'; };
+  const out = [];
+  if (document.querySelector('input[type=file]') || document.querySelector('form[enctype="multipart/form-data"]'))
+    out.push('file-upload');
+  if ([...document.querySelectorAll('[contenteditable]:not([contenteditable=false])')].some(vis))
+    out.push('contenteditable');
+  const here = location.origin;
+  if ([...document.querySelectorAll('iframe[src]')].some(f => { try { return vis(f) && new URL(f.src, location.href).origin !== here; } catch (e) { return false; } }))
+    out.push('cross-origin-iframe');
+  return out;
+}"""
+
+
+BLOCK_TYPES = {"image", "media", "font"}
+# Never block captcha providers: an agent (or a human) may need to see the challenge.
+CAPTCHA_HOSTS = ("google.com", "gstatic.com", "recaptcha.net", "hcaptcha.com", "challenges.cloudflare.com")
+
+
+def _load_blocklist() -> frozenset[str]:
+    f = Path(__file__).parent / "blocklist.txt"
+    return frozenset(l.strip().lower() for l in f.read_text().splitlines() if l.strip() and not l.startswith("#"))
+
+
+BLOCKLIST = _load_blocklist()
+
+
+def _host_matches(host: str, domains) -> bool:
+    host = host.lower()
+    return any(host == d or host.endswith("." + d) for d in domains)
+
+
+class EngineError(RuntimeError):
+    pass
+
+
+def _free_port() -> int:
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()
+    return port
+
+
+def _sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+_PRIVATE_CACHE: dict[str, bool] = {}
+
+
+def is_private_host(host: str) -> bool:
+    """True for loopback, RFC1918, link-local (incl. cloud metadata), unique-local, unspecified,
+    or a hostname that resolves to any of those. Resolution failures count as public (the
+    request will fail on its own)."""
+    import ipaddress
+    host = host.strip("[]").lower()
+    if host in _PRIVATE_CACHE:
+        return _PRIVATE_CACHE[host]
+    if host == "localhost" or host.endswith(".localhost"):
+        _PRIVATE_CACHE[host] = True
+        return True
+    try:
+        addrs = [ipaddress.ip_address(host)]
+    except ValueError:
+        try:
+            addrs = [ipaddress.ip_address(a[4][0].split("%")[0]) for a in socket.getaddrinfo(host, None)]
+        except OSError:
+            addrs = []
+    def bad(a):
+        if getattr(a, "ipv4_mapped", None):
+            a = a.ipv4_mapped
+        return a.is_private or a.is_loopback or a.is_link_local or a.is_unspecified or a.is_reserved
+    res = any(bad(a) for a in addrs)
+    _PRIVATE_CACHE[host] = res
+    return res
+
+
+def find_obscura() -> Path | None:
+    for p in OBSCURA_SEARCH:
+        if p and p.is_file():
+            return p
+    return None
+
+
+def verify_obscura(binary: Path) -> None:
+    """Refuse to run a binary whose hash does not match the pinned release."""
+    for name, want in OBSCURA_SHA256.items():
+        f = binary.parent / name
+        if not f.is_file():
+            raise EngineError(f"{f} missing")
+        got = _sha256(f)
+        if got != want:
+            raise EngineError(f"{f.name} hash mismatch: got {got[:16]}…, want {want[:16]}…")
+
+
+def sandbox_profile(tmpdir: str, bin_dir: str, localhost_only: bool) -> str:
+    """macOS sandbox for Obscura: no reads of $HOME (except its own folder), writes only to its
+    temp dir, inbound connections only on localhost. Optionally outbound only to localhost."""
+    home = str(Path.home())
+    net_out = ('(deny network-outbound)\n(allow network-outbound (remote ip "localhost:*"))\n'
+               '(allow network-outbound (remote unix-socket))\n') if localhost_only else ""
+    return f"""(version 1)
+(allow default)
+(deny file-write*)
+(allow file-write* (subpath "{tmpdir}") (subpath "/private/var/folders") (subpath "/dev"))
+(deny file-read* (subpath "{home}"))
+(allow file-read* (subpath "{bin_dir}") (subpath "{tmpdir}"))
+(deny network-inbound)
+(allow network-inbound (local ip "localhost:*"))
+{net_out}"""
+
+
+@dataclass
+class ObscuraProcess:
+    """One sandboxed `obscura serve` on 127.0.0.1 with a per-launch bearer token."""
+    binary: Path
+    allow_private_network: bool = False
+    localhost_only: bool = False
+    stealth: bool = False
+    port: int = field(default_factory=_free_port)
+    token: str = field(default_factory=lambda: secrets.token_hex(32))
+    proc: subprocess.Popen | None = None
+    tmp: str = ""
+
+    @property
+    def endpoint(self) -> str:
+        return f"ws://127.0.0.1:{self.port}"
+
+    @property
+    def headers(self) -> dict[str, str]:
+        return {"Authorization": f"Bearer {self.token}"}
+
+    def start(self, timeout: float = 15) -> None:
+        verify_obscura(self.binary)
+        self.tmp = os.path.realpath(tempfile.mkdtemp(prefix="leanb-obscura-"))
+        prof = Path(self.tmp) / "sandbox.sb"
+        prof.write_text(sandbox_profile(self.tmp, str(self.binary.parent.resolve()), self.localhost_only))
+        ready = Path(self.tmp) / "ready"
+        args = ["/usr/bin/sandbox-exec", "-f", str(prof), str(self.binary), "serve",
+                "--host", "127.0.0.1", "--port", str(self.port), "--ready-file", str(ready), "--quiet"]
+        if self.allow_private_network:
+            args.append("--allow-private-network")
+        if self.stealth:
+            args.append("--stealth")
+        env = {"PATH": "/usr/bin:/bin", "HOME": self.tmp, "TMPDIR": self.tmp, "OBSCURA_CDP_TOKEN": self.token}
+        self.proc = subprocess.Popen(args, env=env, cwd=self.tmp, stdin=subprocess.DEVNULL,
+                                     stdout=open(Path(self.tmp) / "obscura.log", "w"), stderr=subprocess.STDOUT)
+        t0 = time.time()
+        while time.time() - t0 < timeout:
+            if self.proc.poll() is not None:
+                raise EngineError(f"obscura exited early ({self.proc.returncode}): {self.log_tail()}")
+            if ready.exists() and ready.read_text().strip():
+                return
+            time.sleep(0.05)
+        self.stop()
+        raise EngineError("obscura did not become ready in time")
+
+    def log_tail(self, n: int = 1500) -> str:
+        f = Path(self.tmp) / "obscura.log"
+        return f.read_text()[-n:] if f.exists() else ""
+
+    def stop(self) -> None:
+        if self.proc and self.proc.poll() is None:
+            self.proc.terminate()
+            try:
+                self.proc.wait(5)
+            except subprocess.TimeoutExpired:
+                self.proc.kill()
+        if self.tmp:
+            shutil.rmtree(self.tmp, ignore_errors=True)
+
+
+@dataclass
+class Tab:
+    """A page plus the engine currently serving it."""
+    page: Page
+    engine: str
+    reason: str = ""
+
+    @property
+    def header(self) -> str:
+        return f"engine: {self.engine}" + (f" ({self.reason})" if self.reason else "")
+
+
+class BrowserManager:
+    """Owns both engines and decides which one serves each page.
+
+    Usage:
+        async with BrowserManager() as bm:
+            tab = await bm.open("https://example.com")
+    """
+
+    def __init__(self, *, prefer: str = "obscura", allow_private_network: bool = False,
+                 localhost_only: bool = False, nav_timeout_ms: int = 20000,
+                 viewport: dict | None = None, fallback_domains: list[str] | None = None,
+                 init_scripts: list[str] | None = None, obscura_init_scripts: list[str] | None = None,
+                 block: bool = True):
+        self.prefer = prefer
+        self.allow_private_network = allow_private_network
+        self.localhost_only = localhost_only
+        self.nav_timeout_ms = nav_timeout_ms
+        self.viewport = viewport or {"width": 1280, "height": 800}
+        self.fallback_domains = set(fallback_domains or [])
+        self.init_scripts = list(init_scripts or [])
+        self.obscura_init_scripts = list(obscura_init_scripts or [])
+        self.block = block  # images/media/fonts + tracker hosts (Chromium only)
+        self.blocked_count = 0
+        self.domain_engine: dict[str, tuple[str, str]] = {}  # host -> (engine, reason), sticky per session
+        self.events: list[str] = []
+        self._pw: Playwright | None = None
+        self._obscura: ObscuraProcess | None = None
+        self._obscura_browser: Browser | None = None
+        self._obscura_ctx: BrowserContext | None = None
+        self._obscura_broken: str = ""
+        self._chromium: Browser | None = None
+        self._chromium_ctx: BrowserContext | None = None
+
+    async def __aenter__(self):
+        await self.start()
+        return self
+
+    async def __aexit__(self, *exc):
+        await self.close()
+
+    async def start(self):
+        self._pw = await async_playwright().start()
+
+    async def close(self):
+        for c in (self._obscura_ctx, self._chromium_ctx):
+            try:
+                if c:
+                    await c.close()
+            except Exception:
+                pass
+        for b in (self._obscura_browser, self._chromium):
+            try:
+                if b:
+                    await b.close()
+            except Exception:
+                pass
+        if self._obscura:
+            self._obscura.stop()
+        if self._pw:
+            await self._pw.stop()
+
+    # ---------- engines ----------
+    def _note(self, msg: str):
+        log.info(msg)
+        self.events.append(msg)
+
+    async def _obscura_context(self) -> BrowserContext:
+        if self._obscura_ctx:
+            return self._obscura_ctx
+        if self._obscura_broken:
+            raise EngineError(self._obscura_broken)
+        binary = find_obscura()
+        if not binary:
+            self._obscura_broken = "obscura binary not found (run install.sh)"
+            raise EngineError(self._obscura_broken)
+        try:
+            self._obscura = ObscuraProcess(binary, allow_private_network=self.allow_private_network,
+                                           localhost_only=self.localhost_only)
+            await asyncio.to_thread(self._obscura.start)
+            self._obscura_browser = await self._pw.chromium.connect_over_cdp(
+                self._obscura.endpoint, headers=self._obscura.headers, timeout=15000)
+            self._obscura_ctx = await self._obscura_browser.new_context(viewport=self.viewport)
+            for js in self.init_scripts + self.obscura_init_scripts:
+                await self._obscura_ctx.add_init_script(js)
+        except Exception as e:
+            self._obscura_broken = f"obscura unavailable: {e}"
+            if self._obscura:
+                self._obscura.stop()
+            raise EngineError(self._obscura_broken) from e
+        return self._obscura_ctx
+
+    async def _chromium_context(self) -> BrowserContext:
+        if not self._chromium_ctx:
+            self._chromium = await self._pw.chromium.launch(headless=True, args=[
+                "--disable-extensions", "--disable-sync", "--disable-background-networking", "--no-first-run"])
+            self._chromium_ctx = await self._chromium.new_context(viewport=self.viewport)
+            for js in self.init_scripts:
+                await self._chromium_ctx.add_init_script(js)
+            await self._chromium_ctx.route("**/*", self._route)
+        return self._chromium_ctx
+
+    async def _route(self, route):
+        req = route.request
+        url = req.url
+        if not url.startswith(("http://", "https://", "ws://", "wss://")):
+            return await route.continue_()
+        host = urlparse(url).hostname or ""
+        # Same SSRF policy as Obscura, so falling back never widens network access.
+        if not self.allow_private_network and await asyncio.to_thread(is_private_host, host):
+            self._note(f"blocked private-network request to {host}")
+            return await route.abort("blockedbyclient")
+        if self.block and req.resource_type != "document" and not _host_matches(host, CAPTCHA_HOSTS):
+            if req.resource_type in BLOCK_TYPES or _host_matches(host, BLOCKLIST):
+                self.blocked_count += 1
+                return await route.abort("blockedbyclient")
+        await route.continue_()
+
+    async def _carry_state(self, src: BrowserContext | None, dst: BrowserContext):
+        """Copy cookies (and same-origin localStorage) from one engine's context to the other."""
+        if not src:
+            return
+        try:
+            st = await src.storage_state()
+        except Exception as e:
+            self._note(f"could not read storage state for carry-over: {e}")
+            return
+        if st.get("cookies"):
+            await dst.add_cookies(st["cookies"])
+        origins = st.get("origins") or []
+        if origins:
+            script = "(() => { const o = %s; const e = o.find(x => x.origin === location.origin); " \
+                     "if (e) for (const kv of e.localStorage) try { localStorage.setItem(kv.name, kv.value); } catch (_) {} })()"
+            import json
+            await dst.add_init_script(script % json.dumps(origins))
+
+    # ---------- public API ----------
+    async def open(self, url: str) -> Tab:
+        host = urlparse(url).hostname or ""
+        if host in self.fallback_domains:
+            self.domain_engine.setdefault(host, ("chromium", "fallback_domains"))
+        engine, reason = self.domain_engine.get(host, (self.prefer, ""))
+        if engine == "obscura":
+            try:
+                ctx = await self._obscura_context()
+            except EngineError as e:
+                return await self._open_chromium(url, reason=str(e), carry_from=None)
+            page = await ctx.new_page()
+            try:
+                await page.goto(url, wait_until="load", timeout=self.nav_timeout_ms)
+            except Exception as e:
+                await page.close()
+                return await self._open_chromium(url, reason=f"navigation failed on obscura: {type(e).__name__}",
+                                                 carry_from=ctx, host=host)
+            try:
+                needs = await page.evaluate(ROUTING_PROBE)
+            except Exception as e:
+                needs = [f"probe failed: {type(e).__name__}"]
+            if needs:
+                await page.close()
+                return await self._open_chromium(url, reason="routed: " + ", ".join(needs), carry_from=ctx, host=host)
+            return Tab(page, "obscura", reason)
+        return await self._open_chromium(url, reason=reason, carry_from=self._obscura_ctx)
+
+    async def _open_chromium(self, url: str, *, reason: str, carry_from: BrowserContext | None,
+                             host: str | None = None) -> Tab:
+        ctx = await self._chromium_context()
+        await self._carry_state(carry_from, ctx)
+        if host and not reason.startswith("routed"):
+            self.domain_engine[host] = ("chromium", reason)  # failures stick for the session
+        if reason:
+            self._note(f"{url} -> chromium ({reason})")
+        page = await ctx.new_page()
+        await page.goto(url, wait_until="load", timeout=self.nav_timeout_ms)
+        return Tab(page, "chromium", reason)
+
+    async def navigate(self, tab: Tab, url: str) -> Tab:
+        """Navigate an existing tab, keeping its history when the engine stays the same."""
+        host = urlparse(url).hostname or ""
+        if host in self.fallback_domains:
+            self.domain_engine.setdefault(host, ("chromium", "fallback_domains"))
+        want, reason = self.domain_engine.get(host, (self.prefer, ""))
+        if want == "obscura" and self._obscura_broken:
+            want = "chromium"
+        if tab.engine == "chromium" and want == "chromium":
+            await tab.page.goto(url, wait_until="load", timeout=self.nav_timeout_ms)
+            return Tab(tab.page, "chromium", reason)
+        if tab.engine == "obscura" and want == "obscura":
+            try:
+                await tab.page.goto(url, wait_until="load", timeout=self.nav_timeout_ms)
+            except Exception as e:
+                ctx = tab.page.context
+                await tab.page.close()
+                return await self._open_chromium(url, reason=f"navigation failed on obscura: {type(e).__name__}",
+                                                 carry_from=ctx, host=host)
+            try:
+                needs = await tab.page.evaluate(ROUTING_PROBE)
+            except Exception as e:
+                needs = [f"probe failed: {type(e).__name__}"]
+            if needs:
+                ctx = tab.page.context
+                await tab.page.close()
+                return await self._open_chromium(url, reason="routed: " + ", ".join(needs), carry_from=ctx, host=host)
+            return Tab(tab.page, "obscura", "")
+        # engine changes: a new page in the other engine (history does not carry over)
+        old = tab.page
+        new = await self.open(url)
+        try:
+            await old.close()
+        except Exception:
+            pass
+        return new
+
+    async def switch_to_chromium(self, tab: Tab, reason: str) -> Tab:
+        """Move a live Obscura tab to Chromium (e.g. snapshot too slow, popup needed). State that
+        lives only in the page (unsaved form input) is lost, so callers do this before acting."""
+        if tab.engine == "chromium":
+            return tab
+        url = tab.page.url
+        src = tab.page.context
+        await tab.page.close()
+        host = urlparse(url).hostname or ""
+        self.domain_engine[host] = ("chromium", reason)
+        return await self._open_chromium(url, reason=reason, carry_from=src)
+
+    def obscura_rss_mb(self) -> float | None:
+        if not (self._obscura and self._obscura.proc):
+            return None
+        out = subprocess.run(["ps", "-axo", "pid=,ppid=,rss="], capture_output=True, text=True).stdout
+        kids, rss = {}, {}
+        for line in out.splitlines():
+            p, pp, r = map(int, line.split())
+            kids.setdefault(pp, []).append(p)
+            rss[p] = r
+        total, stack = 0, [self._obscura.proc.pid]
+        while stack:
+            p = stack.pop()
+            total += rss.get(p, 0)
+            stack += kids.get(p, [])
+        return round(total / 1024, 1)

@@ -1,0 +1,18 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Shipping — step 3 of 3</title><link rel="stylesheet" href="/style.css"></head><body><!--NAV-->
+<main><h1>Step 3 of 3: Delivery</h1>
+<fieldset><legend>Delivery speed</legend>
+<label><input type="radio" name="speed" value="standard"> Standard (5 days)</label>
+<label><input type="radio" name="speed" value="express"> Express (1 day)</label></fieldset>
+<p id="summary"></p>
+<button id="back">Back</button> <button id="place">Place order</button><p id="done" role="status"></p></main><!--FOOTER-->
+<script>
+const s = JSON.parse(sessionStorage.wiz || '{}');
+document.getElementById('summary').textContent = `Shipping to ${s.name || '?'}, ${s.city || '?'} ${s.pin || ''}`;
+document.getElementById('back').onclick = () => location.href = '/wizard2.html';
+document.getElementById('place').onclick = async () => {
+  const r = document.querySelector('input[name=speed]:checked');
+  s.speed = r ? r.value : '';
+  await fetch('/api/submit/wizard', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(s)});
+  document.getElementById('done').textContent = 'Order placed!';
+};
+</script></body></html>

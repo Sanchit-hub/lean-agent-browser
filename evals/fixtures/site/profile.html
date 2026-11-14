@@ -1,0 +1,23 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Rate your stay</title><link rel="stylesheet" href="/style.css"></head><body><!--NAV-->
+<main><h1>Rate your stay</h1><p>Hotel Saffron, Jaipur</p><star-rating></star-rating></main><!--FOOTER-->
+<script>
+class StarRating extends HTMLElement {
+  constructor() {
+    super();
+    const s = this.attachShadow({mode: 'open'});
+    let val = 0;
+    s.innerHTML = `<style>button{font-size:20px;background:none;border:none;cursor:pointer}</style>
+      <div role="radiogroup" aria-label="Rating">${[1,2,3,4,5].map(n => `<button aria-label="${n} star${n>1?'s':''}" data-n="${n}">☆</button>`).join('')}</div>
+      <label>Comment <input id="c"></label><button id="send">Submit rating</button><p id="m" role="status"></p>`;
+    s.querySelectorAll('[data-n]').forEach(b => b.onclick = () => {
+      val = +b.dataset.n; s.querySelectorAll('[data-n]').forEach(x => x.textContent = +x.dataset.n <= val ? '★' : '☆');
+    });
+    s.getElementById('send').onclick = async () => {
+      if (!val) { s.getElementById('m').textContent = 'Pick a rating first'; return; }
+      await fetch('/api/submit/shadow', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({rating: val, comment: s.getElementById('c').value})});
+      s.getElementById('m').textContent = 'Thanks for rating!';
+    };
+  }
+}
+customElements.define('star-rating', StarRating);
+</script></body></html>

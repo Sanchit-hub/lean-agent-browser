@@ -1,0 +1,9 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Developer console</title><link rel="stylesheet" href="/style.css"></head><body><!--NAV-->
+<main><h1>Developer console</h1><label>Key label <input id="label"></label><button id="gen">Generate test key</button><p id="out" role="status"></p></main><!--FOOTER-->
+<script>
+document.getElementById('gen').onclick = async () => {
+  const label = document.getElementById('label').value;
+  await fetch('/api/submit/newtab', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({label})});
+  document.getElementById('out').textContent = 'Test key created for “' + label + '”';
+};
+</script></body></html>

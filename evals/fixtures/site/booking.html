@@ -1,0 +1,39 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Book a table</title><link rel="stylesheet" href="/style.css"></head><body><!--NAV-->
+<main><h1>Book a table</h1>
+<div>City</div>
+<div class="combo" id="city" role="combobox" aria-label="City" aria-expanded="false" tabindex="0">Choose a city</div>
+<div class="opts hidden" id="city-opts" role="listbox"></div>
+<div style="margin-top:12px">Date</div>
+<input id="date" aria-label="Date" readonly placeholder="Pick a date">
+<div id="cal" class="hidden"><div><b>December 2026</b></div><div class="cal" id="days"></div></div>
+<label>Guests <input id="guests" type="number" min="1" max="10" value="2"></label>
+<button id="book">Book</button><p id="msg" role="status"></p></main><!--FOOTER-->
+<script>
+const cities = ['Delhi','Mumbai','Bengaluru','Chennai','Kolkata','Jaipur'];
+let city = null, date = null;
+const combo = document.getElementById('city'), opts = document.getElementById('city-opts');
+combo.addEventListener('click', () => {
+  const open = opts.classList.toggle('hidden') === false;
+  combo.setAttribute('aria-expanded', open);
+  opts.innerHTML = cities.map(c => `<div class="opt" role="option">${c}</div>`).join('');
+});
+opts.addEventListener('click', e => {
+  const o = e.target.closest('.opt'); if (!o) return;
+  city = o.textContent; combo.textContent = city; opts.classList.add('hidden'); combo.setAttribute('aria-expanded', false);
+});
+const d = document.getElementById('date'), cal = document.getElementById('cal'), days = document.getElementById('days');
+d.addEventListener('click', () => {
+  cal.classList.toggle('hidden');
+  days.innerHTML = Array.from({length: 31}, (_, i) => `<button type="button" aria-label="December ${i+1}, 2026">${i+1}</button>`).join('');
+});
+days.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  date = `2026-12-${String(b.textContent).padStart(2,'0')}`; d.value = date; cal.classList.add('hidden');
+});
+document.getElementById('book').onclick = async () => {
+  if (!city || !date) { document.getElementById('msg').textContent = 'Please choose a city and a date'; return; }
+  await fetch('/api/submit/booking', {method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({city, date, guests: document.getElementById('guests').value})});
+  document.getElementById('msg').textContent = `Booked for ${city} on ${date}`;
+};
+</script></body></html>
