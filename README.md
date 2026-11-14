@@ -1,9 +1,21 @@
 # Lean Agent Browser
 
-A browser for AI agents that spends far fewer tokens than screenshot, HTML or accessibility-tree
-browsing. Pages come back as compact text with numeric element ids, and actions return only what
-changed. It runs on [Obscura](https://github.com/h4ckf0r0day/obscura), a small Rust headless browser,
-and falls back to Chromium for anything Obscura can't handle.
+[![CI](https://github.com/Sanchit-hub/lean-agent-browser/actions/workflows/ci.yml/badge.svg)](https://github.com/Sanchit-hub/lean-agent-browser/actions/workflows/ci.yml)
+![platform](https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)-lightgrey)
+![license](https://img.shields.io/badge/license-Apache--2.0-blue)
+
+**Lean Agent Browser helps AI agents complete web tasks with less context, fewer tool calls, and actions
+that report what actually changed.**
+
+| Same 18 tasks, same agent (Claude Sonnet 5.5), 3 runs each | Success | Median tokens per task | Mean turns | Mean time |
+|---|---|---|---|---|
+| Playwright MCP | 54/54 | 48,576 | 7.5 | 18.6 s |
+| **Lean Agent Browser** | **54/54** | **11,572** | **5.1** | **11.0 s** |
+
+Success is checked by the test server, not by what the agent claims. The method, the raw numbers and
+the limitations are in [`evals/CHANGELOG.md`](evals/CHANGELOG.md).
+
+## What the agent sees
 
 ```
 page: Sign up | url: /signup.html | engine: obscura
@@ -16,30 +28,64 @@ header: Home, Search, Orders (+5) [expand:h1]
 14: button "Create account"
 ```
 
+Act on an id, and you get back only what changed:
+
 ```
 > act fill 10 asha@example.com
 ~10: textbox "Email"* type=email = "asha@example.com"   (error cleared)
 ```
 
-**Measured with a real agent** (Claude Sonnet 5.5, 18 tasks × 3 runs, success checked by the server; see
-`evals/CHANGELOG.md`):
-
-| | Success | Median tokens per task | Mean turns | Mean time |
-|---|---|---|---|---|
-| Playwright MCP | 54/54 | 48,576 | 7.5 | 18.6 s |
-| **Lean** | **54/54** | **11,572** | **5.1** | **11.0 s** |
-
-That is the same success rate with 4.5× fewer tokens. On real pages the default snapshot is 10–20× smaller than
-Playwright's aria snapshot (GitHub: 949 vs 19,298 tokens), and Obscura uses about 3× less memory than
-Chromium. See `SPEC.md` and `spike/FINDINGS.md` for the details.
-
-## Install (macOS, Apple Silicon)
+## Quickstart (macOS, Apple Silicon)
 
 ```bash
-./install.sh
+git clone https://github.com/Sanchit-hub/lean-agent-browser && cd lean-agent-browser
+./install.sh                                         # pinned, checksummed Obscura + Chromium, then a self-check
+.venv/bin/leanb open https://news.ycombinator.com/   # print a snapshot
 ```
 
-The installer:
+From Python:
+
+```python
+from lean_browser import LeanBrowser
+
+async with LeanBrowser() as browser:
+    page = await browser.open("https://httpbin.org/forms/post")
+    print(page)                                    # ids for every field
+    print(await browser.fill_form({1: "Asha", 3: "asha@example.com"}, submit=True))
+```
+
+More in [`examples/`](examples/): `quickstart.py`, `form_fill.py` (fills a public form in one call and
+checks what the server received), and `structured_extract.py` (a Wikipedia table as JSON, no LLM involved).
+
+## How it works
+
+```
+agent ──MCP / CLI / Python──▶  6 tools  ──▶  snapshot · act · diff · settle  ──▶  Obscura (default, ~3× less memory)
+                                                                             └─▶  Chromium (file uploads, rich-text
+                                                                                  editors, cross-origin iframes, failures)
+```
+
+- **Compact snapshots.** One line per interactive element, each with a stable id. Navigation, footers
+  and long lists collapse into one line you can expand. Hidden text is dropped.
+- **Diffs, not page dumps.** After every action the browser waits for the page to settle and
+  returns only the changes, or `no change` plus a hint.
+- **Two engines, one API.** Obscura serves pages by default. Pages it can't handle go to Chromium
+  before any action. The routing rules come from tests documented in [`spike/FINDINGS.md`](spike/FINDINGS.md).
+
+## Limitations
+
+- **macOS on Apple Silicon only** for now. The Obscura sandbox uses macOS `sandbox-exec`.
+- The benchmark compares against one baseline (Playwright MCP) on 18 tasks we wrote ourselves. It is a
+  promising result, not proof against every browser agent.
+- Obscura 0.2.6 can't upload files, type into rich-text editors, open popups or read cross-origin
+  iframes. Those pages run on Chromium automatically.
+- Snapshot time on very large pages is about 1 s on Obscura (GitHub repo page) vs 20 ms on Chromium.
+
+See [`ROADMAP.md`](ROADMAP.md) for what's next.
+
+## Install details
+
+`./install.sh`:
 - creates `.venv/` with pinned Python dependencies
 - downloads **Obscura 0.2.6** and checks its SHA256 against a pinned value
 - installs the Obscura binaries to `~/.lean-browser/bin/` and re-checks their hashes
@@ -52,7 +98,7 @@ To also install the Playwright MCP baseline used by the evals (needs Node.js 20 
 ## Use it from Claude Code (MCP)
 
 ```bash
-claude mcp add lean-browser -- ~/Desktop/lean/.venv/bin/leanb mcp
+claude mcp add lean-browser -- "$PWD/.venv/bin/leanb" mcp
 ```
 
 There are six tools. Their definitions add up to about 515 tokens, and they are sent with every request:
