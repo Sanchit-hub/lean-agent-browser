@@ -64,6 +64,18 @@ def write_report(out_dir: Path) -> Path:
 
     path = out_dir / "report.md"
     path.write_text("\n".join(lines))
+    # machine-readable summary for leanb bench consumers
+    summary = {"run": out_dir.name, "model": meta["config"]["model"], "tasks": meta["tasks"], "runs": meta["runs"], "modes": {}}
+    for mode in dict.fromkeys(r["mode"] for r in runs):
+        xs = [r for r in runs if r["mode"] == mode]
+        summary["modes"][mode] = {
+            "success": sum(r["success"] for r in xs), "attempts": len(xs),
+            "median_total_tokens": statistics.median(r["total_tokens"] for r in xs),
+            "mean_turns": round(statistics.mean(r["steps"] for r in xs), 2),
+            "mean_wall_s": round(statistics.mean(r["wall_s"] for r in xs), 2),
+            "failures": [{"task": r["task"], "run": r["run"], "reason": r["reason"]} for r in xs if not r["success"]],
+        }
+    (out_dir / "summary.json").write_text(json.dumps(summary, indent=2))
     # Only a full run (all 18 tasks, >= 3 runs) replaces the committed evals/report.md;
     # quick or partial runs keep their report inside their own results folder.
     if len(meta["tasks"]) >= 18 and meta["runs"] >= 3:

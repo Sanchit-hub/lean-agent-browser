@@ -4,6 +4,8 @@
   leanb shell <url>                               interactive session (act/fill/snapshot/...)
   leanb mcp                                       run the MCP server on stdio
   leanb doctor                                    check the install (hashes, sandbox, both engines)
+  leanb trace list | show [run|latest] [--full]   inspect traces (record them with --trace)
+  leanb bench [--quick] [--runs N] [--modes ...]  run the eval suite (needs the claude CLI or an API key)
 
 Common flags: --engine obscura|chromium, --allow-private-network, --config PATH
 """
@@ -25,7 +27,8 @@ SHELL_HELP = """commands:
 
 
 def _config(a) -> Config:
-    return Config.load(a.config, prefer=a.engine, allow_private_network=True if a.allow_private_network else None)
+    return Config.load(a.config, prefer=a.engine, allow_private_network=True if a.allow_private_network else None,
+                       trace=True if getattr(a, "trace", False) else None)
 
 
 def _show(parts):
@@ -129,11 +132,35 @@ async def cmd_doctor(a) -> int:
     return 0 if ok else 1
 
 
+def cmd_bench(a) -> int:
+    """Thin wrapper over the eval drivers so the benchmark is one command."""
+    import subprocess
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    if not (root / "evals").is_dir():
+        print("leanb bench runs from a source checkout (it needs evals/)")
+        return 2
+    module = "evals.claude_driver" if a.agent == "claude-cli" else "evals.runner"
+    args = [sys.executable, "-m", module]
+    if a.quick:
+        args.append("--quick")
+    else:
+        args += ["--runs", str(a.runs)]
+    modes = a.modes or "playwright-mcp,lean"
+    args += ["--modes", modes]
+    if a.tasks:
+        args += ["--tasks", a.tasks]
+    if a.agent == "api":
+        args.append("-y")
+    return subprocess.call(args, cwd=root)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="leanb", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--engine", choices=["obscura", "chromium"])
     ap.add_argument("--allow-private-network", action="store_true", help="allow localhost/LAN pages (dev testing)")
     ap.add_argument("--config", help="config file (default ~/.lean-browser/config.toml)")
+    ap.add_argument("--trace", action="store_true", help="record a JSONL trace to ~/.lean-browser/traces")
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("open", help="print a snapshot of a page")
     p.add_argument("url")
@@ -142,11 +169,28 @@ def main(argv=None):
     p.add_argument("url")
     sub.add_parser("mcp", help="run the MCP server on stdio")
     sub.add_parser("doctor", help="check the install")
+    p = sub.add_parser("trace", help="inspect recorded traces")
+    p.add_argument("what", choices=["list", "show"])
+    p.add_argument("run", nargs="?", default="latest")
+    p.add_argument("--full", action="store_true", help="print each call's result")
+    p.add_argument("--dir", help="trace folder (default ~/.lean-browser/traces; bench runs keep theirs in evals/results/*/traces)")
+    p = sub.add_parser("bench", help="run the eval suite with a real agent")
+    p.add_argument("--agent", choices=["claude-cli", "api"], default="claude-cli",
+                   help="claude-cli uses your Claude Code login (no API key); api uses ANTHROPIC_API_KEY")
+    p.add_argument("--quick", action="store_true", help="6 tasks, 1 run")
+    p.add_argument("--runs", type=int, default=3)
+    p.add_argument("--modes", default=None, help="comma-separated; default: playwright-mcp,lean")
+    p.add_argument("--tasks", default=None, help="comma-separated task ids")
     a = ap.parse_args(argv)
     if a.cmd == "open":
         asyncio.run(cmd_open(a))
     elif a.cmd == "shell":
         asyncio.run(cmd_shell(a))
+    elif a.cmd == "trace":
+        from lean_browser import trace
+        print(trace.list_runs(a.dir) if a.what == "list" else trace.show_run(a.run, a.dir, full=a.full))
+    elif a.cmd == "bench":
+        sys.exit(cmd_bench(a))
     elif a.cmd == "doctor":
         sys.exit(asyncio.run(cmd_doctor(a)))
     elif a.cmd == "mcp":

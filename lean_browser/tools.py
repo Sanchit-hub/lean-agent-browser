@@ -65,6 +65,7 @@ class Config:
     allowed_upload_dirs: list[str] = field(default_factory=lambda: ["~/Downloads"])
     block: bool = True
     confirm_risky: bool = False         # require act(..., value="confirm") for pay/delete/send-like buttons
+    trace: bool = False                 # write a JSONL trace of every tool call to ~/.lean-browser/traces
     snapshot_timeout_s: float = 2.0
     nav_timeout_ms: int = 20000
 
@@ -103,6 +104,11 @@ class LeanBrowser:
                                  block=c.block)
         self.session = Session(self.bm, upload_dirs=c.allowed_upload_dirs, snapshot_timeout_s=c.snapshot_timeout_s,
                                confirm_risky=c.confirm_risky)
+        import os
+        self.tracer = None
+        if c.trace or os.environ.get("LEANB_TRACE"):
+            from lean_browser.trace import Tracer
+            self.tracer = Tracer()
 
     async def __aenter__(self):
         await self.bm.start()
@@ -161,6 +167,23 @@ class LeanBrowser:
     async def call(self, name: str, args: dict | None) -> list:
         """Run one tool. Returns a list of content parts: str (text) or bytes (PNG).
         Errors come back as a single 'Error: ...' string, never as exceptions."""
+        if not self.tracer:
+            return await self._call(name, args)
+        import time
+        from lean_browser.session import _index
+        from lean_browser.trace import redact_args
+        s = self.session
+        idx = _index(s.cur.snapper.last) if s.active >= 0 else {}
+        safe = redact_args(name, dict(args or {}), idx)
+        t0 = time.time()
+        parts = await self._call(name, args)
+        eng = url = None
+        if s.active >= 0:
+            eng, url = s.cur.tab.engine, s.cur.page.url
+        self.tracer.record(name, safe, parts, t0, eng, url)
+        return parts
+
+    async def _call(self, name: str, args: dict | None) -> list:
         args = dict(args or {})
         s = self.session
         try:

@@ -41,11 +41,13 @@ DRIVER_SYSTEM = SYSTEM.replace("call the answer tool with the requested informat
                                "reply with a final line 'FINAL: <the requested information, or done>'")
 
 
-def mcp_config(mode: str, tmp: Path) -> tuple[Path, str]:
+def mcp_config(mode: str, tmp: Path, trace_dir: Path | None = None) -> tuple[Path, str]:
     if mode == "lean":
         cfg = tmp / "lean.toml"
         cfg.write_text(f'allow_private_network = true\nallowed_upload_dirs = ["{tmp.resolve()}"]\n')
         server = {"command": str(ROOT / ".venv/bin/leanb"), "args": ["--config", str(cfg), "mcp"]}
+        if trace_dir:  # every lean run leaves a trace next to the results (leanb trace list --dir ...)
+            server["env"] = {"LEANB_TRACE": "1", "LEANB_TRACE_DIR": str(trace_dir)}
         name = "lean"
     else:
         server = {"command": "node", "args": [str(PWMCP_CLI), "--headless", "--isolated", "--executable-path",
@@ -58,7 +60,7 @@ def mcp_config(mode: str, tmp: Path) -> tuple[Path, str]:
 
 def run_one(base: str, task, mode: str, run: int, tmp: Path, log_dir: Path) -> RunResult:
     urllib.request.urlopen(f"{base}/api/reset").read()
-    cfg, server = mcp_config(mode, tmp)
+    cfg, server = mcp_config(mode, tmp, log_dir.parent / "traces")
     # Both servers may only upload from the run's working folder (Playwright MCP restricts file access
     # to its cwd by default; lean uses allowed_upload_dirs), so the resume is copied there for both.
     resume = tmp.resolve() / "resume.pdf"
