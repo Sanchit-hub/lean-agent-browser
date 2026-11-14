@@ -6,6 +6,7 @@ modes compete on equal terms:
 
   lean            lean_browser's 6 tools  (leanb mcp)
   playwright-mcp  Microsoft's Playwright MCP 0.0.83 (aria snapshots with refs)
+  agent-browser   Vercel's agent-browser 0.41.0 (`agent-browser mcp`, default "core" tool profile)
 
 Success is still verified by the fixture server. Claude Code always uses prompt caching, so
 token numbers are reported both as total processed tokens and as cost-weighted list-price USD.
@@ -34,7 +35,8 @@ from evals.tasks import BY_ID, QUICK, TASKS
 
 ROOT = Path(__file__).resolve().parent.parent
 CLAUDE = os.environ.get("CLAUDE_BIN", str(Path.home() / ".local/bin/claude"))
-MODES = ["playwright-mcp", "lean"]
+MODES = ["playwright-mcp", "agent-browser", "lean"]
+AGENT_BROWSER = ROOT / ".vendor/agent-browser/node_modules/agent-browser/bin/agent-browser-darwin-arm64"
 MODEL = {"claude-sonnet-5-5": "sonnet"}.get(CONFIG["model"], CONFIG["model"])
 
 DRIVER_SYSTEM = SYSTEM.replace("call the answer tool with the requested information, or 'done' for action-only goals",
@@ -49,6 +51,12 @@ def mcp_config(mode: str, tmp: Path, trace_dir: Path | None = None) -> tuple[Pat
         if trace_dir:  # every lean run leaves a trace next to the results (leanb trace list --dir ...)
             server["env"] = {"LEANB_TRACE": "1", "LEANB_TRACE_DIR": str(trace_dir)}
         name = "lean"
+    elif mode == "agent-browser":
+        # Same Chrome for Testing build as the other modes; a fresh named session per run.
+        server = {"command": str(AGENT_BROWSER), "args": ["mcp"],
+                  "env": {"AGENT_BROWSER_EXECUTABLE_PATH": _chromium_executable(),
+                          "AGENT_BROWSER_SESSION_NAME": f"leanb-eval-{tmp.name}-{time.time_ns()}"}}
+        name = "agentbrowser"
     else:
         server = {"command": "node", "args": [str(PWMCP_CLI), "--headless", "--isolated", "--executable-path",
                                               _chromium_executable(), "--viewport-size", "1280,800"]}
@@ -81,6 +89,9 @@ def run_one(base: str, task, mode: str, run: int, tmp: Path, log_dir: Path) -> R
     except json.JSONDecodeError:
         out = {"subtype": "bad_output", "raw": (p.stdout + p.stderr)[-2000:]}
     (log_dir / f"{task.id}.{mode}.{run}.json").write_text(json.dumps(out, indent=2))
+    if mode == "agent-browser":  # agent-browser keeps a browser daemon per session; stop it
+        sess = json.loads(cfg.read_text())["mcpServers"][server]["env"]
+        subprocess.run([str(AGENT_BROWSER), "close"], env={**env, **sess}, capture_output=True, timeout=30)
     u = out.get("usage") or {}
     res.input_tokens = u.get("input_tokens", 0)
     res.output_tokens = u.get("output_tokens", 0)

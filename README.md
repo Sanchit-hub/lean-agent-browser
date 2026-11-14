@@ -7,10 +7,11 @@
 **Lean Agent Browser helps AI agents complete web tasks with less context, fewer tool calls, and actions
 that report what actually changed.**
 
-| Same 18 tasks, same agent (Claude Sonnet 5.5), 3 runs each | Success | Median tokens per task | Mean turns | Mean time |
+| Same 18 tasks, same agent (Claude Sonnet 5.5) | Success | Median tokens per task | Mean turns | Mean time |
 |---|---|---|---|---|
-| Playwright MCP | 54/54 | 48,576 | 7.5 | 18.6 s |
-| **Lean Agent Browser** | **54/54** | **11,572** | **5.1** | **11.0 s** |
+| Playwright MCP 0.0.83 (3 runs) | 54/54 | 48,576 | 7.5 | 18.6 s |
+| Vercel agent-browser 0.41.0, MCP `core` profile (1 run) | 17/18 | 146,314 | 8.7 | 16.1 s |
+| **Lean Agent Browser (3 runs)** | **54/54** | **11,572** | **5.1** | **11.0 s** |
 
 Success is checked by the test server, not by what the agent claims. The method, the raw numbers and
 the limitations are in [`evals/CHANGELOG.md`](evals/CHANGELOG.md).

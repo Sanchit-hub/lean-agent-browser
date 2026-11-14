@@ -48,7 +48,10 @@ Goal-based relevance remains future, opt-in work. The original plan:
 - Goal-based relevance comes later and is opt-in only. It needs fuzzy matching or an LLM, which works
   against "deterministic first", and it must never silently drop evidence.
 
-### 3. Trace and reproducible benchmark
+### 3. Trace and reproducible benchmark — **done (2026-11-15)**
+`--trace` gives a JSONL trace per run and `leanb trace list|show`. `leanb bench` writes `summary.json` plus
+a trace for every lean task. Vercel agent-browser is now a baseline (see `evals/CHANGELOG.md`).
+Still open: live-site tasks, and Stagehand and Browser Use reported in their own category. The original plan:
 - A JSONL trace of every call: input, target resolution, context sent, changes, verification, timing.
 - `leanb trace show <run>`.
 - `leanb bench --suite core --runs N`, with Markdown and JSON output and failures included.

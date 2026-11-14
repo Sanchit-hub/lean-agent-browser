@@ -2,7 +2,7 @@
 # One-command install for Lean Agent Browser (macOS arm64).
 #
 #   ./install.sh              core: Python env, pinned + checksummed Obscura, Chromium, self-check
-#   ./install.sh --with-eval  also installs the pinned Playwright MCP baseline (Node.js >= 20)
+#   ./install.sh --with-eval  also installs the pinned Playwright MCP and agent-browser baselines (Node.js >= 20)
 #
 # Safe to re-run. Nothing is installed outside this folder and ~/.lean-browser/.
 set -euo pipefail
@@ -11,6 +11,7 @@ OBSCURA_VERSION="0.2.6"
 OBSCURA_TARBALL="obscura-aarch64-macos.tar.gz"
 OBSCURA_SHA256="19faa248ac762f466ddb822dbb03ed4f097312d10d1a4d5b2143e6040a9bebd0"
 PLAYWRIGHT_MCP_VERSION="0.0.83"
+AGENT_BROWSER_VERSION="0.41.0"
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 HOME_DIR="$HOME/.lean-browser"
@@ -83,6 +84,11 @@ if [[ "$WITH_EVAL" == 1 ]]; then
   mkdir -p "$HERE/.vendor/playwright-mcp"
   (cd "$HERE/.vendor/playwright-mcp" && npm install --prefix . "@playwright/mcp@$PLAYWRIGHT_MCP_VERSION" \
      --save-exact --ignore-scripts --no-audit --no-fund >/dev/null)
+  say "Vercel agent-browser $AGENT_BROWSER_VERSION (eval baseline; install scripts disabled, uses our Chromium)"
+  mkdir -p "$HERE/.vendor/agent-browser"
+  (cd "$HERE/.vendor/agent-browser" && npm install --prefix . "agent-browser@$AGENT_BROWSER_VERSION" \
+     --save-exact --ignore-scripts --no-audit --no-fund >/dev/null)
+  chmod +x "$HERE/.vendor/agent-browser/node_modules/agent-browser/bin/agent-browser-darwin-arm64"
 fi
 
 # ---------- self-check ----------
