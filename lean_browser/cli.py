@@ -3,6 +3,7 @@
   leanb open <url> [--mode actions|read|full]     one-shot snapshot of a page
   leanb shell <url>                               interactive session (act/fill/snapshot/...)
   leanb mcp                                       run the MCP server on stdio
+  leanb install                                   download the engines (pinned, checksummed Obscura + Chromium)
   leanb doctor                                    check the install (hashes, sandbox, both engines)
   leanb trace list | show [run|latest] [--full]   inspect traces (record them with --trace)
   leanb bench [--quick] [--runs N] [--modes ...]  run the eval suite (needs the claude CLI or an API key)
@@ -168,6 +169,7 @@ def main(argv=None):
     p = sub.add_parser("shell", help="interactive session")
     p.add_argument("url")
     sub.add_parser("mcp", help="run the MCP server on stdio")
+    sub.add_parser("install", help="download the engines (Obscura + Chromium) into ~/.lean-browser")
     sub.add_parser("doctor", help="check the install")
     p = sub.add_parser("trace", help="inspect recorded traces")
     p.add_argument("what", choices=["list", "show"])
@@ -191,6 +193,9 @@ def main(argv=None):
         print(trace.list_runs(a.dir) if a.what == "list" else trace.show_run(a.run, a.dir, full=a.full))
     elif a.cmd == "bench":
         sys.exit(cmd_bench(a))
+    elif a.cmd == "install":
+        from lean_browser.installer import main as install_main
+        sys.exit(install_main())
     elif a.cmd == "doctor":
         sys.exit(asyncio.run(cmd_doctor(a)))
     elif a.cmd == "mcp":

@@ -45,6 +45,14 @@ git clone https://github.com/Sanchit-hub/lean-agent-browser && cd lean-agent-bro
 .venv/bin/leanb open https://news.ycombinator.com/   # print a snapshot
 ```
 
+Or as a package, without cloning (the repo is private for now, so this needs GitHub access; not on PyPI yet):
+
+```bash
+pip install "git+https://github.com/Sanchit-hub/lean-agent-browser"
+leanb install    # pinned, checksummed Obscura + Chromium into ~/.lean-browser
+leanb doctor
+```
+
 From Python:
 
 ```python

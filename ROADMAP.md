@@ -67,7 +67,7 @@ Still open: live-site tasks, and Stagehand and Browser Use reported in their own
 - **Task and session memory** with explicit scopes, expiry and provenance.
 - **Adaptive budget strategies:** `minimal` mode is done. Today `actions` plays the role of balanced and
   `full` the role of complete.
-- **Packaging:** `pip install` plus `leanb install` for the engines.
+- **Packaging:** done. `pip install` + `leanb install` + `leanb doctor` was tested from a wheel in a fresh venv. The package name `lean-agent-browser` is still free on PyPI; it hasn't been published yet.
 
 ## Not now
 

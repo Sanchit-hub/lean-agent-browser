@@ -8,3 +8,5 @@ spike/results/
 .playwright-mcp/
 *.egg-info/
 .env
+dist/
+build/
