@@ -73,7 +73,24 @@ class Config:
         return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
 
 
+class LeanBrowserError(Exception):
+    """A tool returned an error (bad id, blocked domain, nothing to extract, ...)."""
+
+
+def _unwrap(text: str) -> str:
+    head, tail = '<page untrusted="true">\n', "\n</page>"
+    return text[len(head):-len(tail)] if text.startswith(head) and text.endswith(tail) else text
+
+
 class LeanBrowser:
+    """Python API. Each method mirrors one MCP tool, returns plain text (or a dict / PNG bytes),
+    and raises LeanBrowserError instead of returning an 'Error: ...' string.
+
+        async with LeanBrowser() as b:
+            print(await b.open("https://news.ycombinator.com/"))
+            print(await b.act("click", 12))
+    """
+
     def __init__(self, config: Config | None = None):
         self.config = config or Config.load()
         c = self.config
@@ -89,6 +106,42 @@ class LeanBrowser:
 
     async def __aexit__(self, *exc):
         await self.bm.close()
+
+    async def _text(self, name: str, args: dict) -> str:
+        parts = await self.call(name, args)
+        text = next((p for p in parts if isinstance(p, str)), "")
+        if text.startswith("Error: "):
+            raise LeanBrowserError(text[len("Error: "):])
+        return _unwrap(text)
+
+    async def open(self, url: str, mode: str = "actions", block: bool | None = None) -> str:
+        args = {"url": url, "mode": mode}
+        if block is not None:
+            args["block"] = block
+        return await self._text("open", args)
+
+    async def snapshot(self, mode: str = "actions", budget: int | None = None, expand: str | None = None,
+                       more: str | None = None, find: str | None = None) -> str:
+        args = {k: v for k, v in dict(mode=mode, budget=budget, expand=expand, more=more, find=find).items() if v is not None}
+        return await self._text("snapshot", args)
+
+    async def act(self, action: str, id: int | None = None, value: str | None = None) -> str:
+        args = {k: v for k, v in dict(action=action, id=id, value=value).items() if v is not None}
+        return await self._text("act", args)
+
+    async def fill_form(self, fields: dict, submit: bool | int = False) -> str:
+        return await self._text("fill_form", {"fields": {str(k): str(v) for k, v in fields.items()}, "submit": submit})
+
+    async def extract(self, kind: str = "auto", within: int | None = None) -> dict:
+        args = {"kind": kind} if within is None else {"kind": kind, "within": within}
+        return json.loads(await self._text("extract", args))
+
+    async def screenshot(self, id: int | None = None) -> bytes:
+        parts = await self.call("screenshot", {} if id is None else {"id": id})
+        png = next((p for p in parts if isinstance(p, bytes)), None)
+        if png is None:
+            raise LeanBrowserError(next((p for p in parts if isinstance(p, str)), "no image")[len("Error: "):])
+        return png
 
     def _check_domain(self, url: str):
         if not self.config.allowed_domains:

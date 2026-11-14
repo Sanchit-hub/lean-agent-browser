@@ -14,3 +14,13 @@ def _default_browsers_path() -> None:
 
 
 _default_browsers_path()
+
+
+__all__ = ["LeanBrowser", "LeanBrowserError", "Config"]
+
+
+def __getattr__(name):  # lazy, so importing a submodule doesn't pull in everything
+    if name in __all__:
+        from lean_browser import tools
+        return getattr(tools, name)
+    raise AttributeError(name)
