@@ -19,7 +19,7 @@ from tests.test_runner import FakeClient
 
 ROOT = Path(__file__).resolve().parent.parent
 SITE = ROOT / "evals/fixtures/site"
-ENV = {**os.environ, "PLAYWRIGHT_BROWSERS_PATH": str(ROOT / ".vendor/pw-browsers")}
+ENV = dict(os.environ)  # lean_browser (imported via conftest) already set PLAYWRIGHT_BROWSERS_PATH
 
 
 @pytest.fixture(scope="module")

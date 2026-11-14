@@ -158,7 +158,7 @@ def test_doctor_cli():
     import subprocess
     root = Path(__file__).resolve().parent.parent
     out = subprocess.run([str(root / ".venv/bin/leanb"), "doctor"], capture_output=True, text=True, timeout=120,
-                         env={**os.environ, "PLAYWRIGHT_BROWSERS_PATH": str(root / ".vendor/pw-browsers")})
+                         env=dict(os.environ))
     assert out.returncode == 0, out.stdout + out.stderr
     assert "all good" in out.stdout
 

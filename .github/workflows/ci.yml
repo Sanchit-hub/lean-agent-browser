@@ -1,0 +1,34 @@
+name: CI
+
+# macOS (Apple Silicon) only: that is the supported platform for now.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Cache Obscura and Chromium
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
+        with:
+          path: ~/.lean-browser
+          key: lean-browser-${{ runner.os }}-${{ hashFiles('install.sh', 'pyproject.toml') }}
+      - name: Install (pinned + checksummed Obscura, Chromium, self-check)
+        run: PYTHON=python3 ./install.sh
+      - name: Tests
+        run: .venv/bin/python -m pytest -q
