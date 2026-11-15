@@ -100,7 +100,10 @@ def run_one(base: str, task, mode: str, run: int, tmp: Path, log_dir: Path) -> R
     (log_dir / f"{task.id}.{mode}.{run}.json").write_text(json.dumps(out, indent=2))
     if mode == "agent-browser":  # agent-browser keeps a browser daemon per session; stop it
         sess = json.loads(cfg.read_text())["mcpServers"][server]["env"]
-        subprocess.run([str(AGENT_BROWSER), "close"], env={**env, **sess}, capture_output=True, timeout=30)
+        try:
+            subprocess.run([str(AGENT_BROWSER), "close"], env={**env, **sess}, capture_output=True, timeout=30)
+        except subprocess.TimeoutExpired:  # a stuck daemon must not end the whole benchmark
+            subprocess.run(["pkill", "-f", f"AGENT_BROWSER_SESSION_NAME={sess['AGENT_BROWSER_SESSION_NAME']}"], capture_output=True)
     u = out.get("usage") or {}
     res.input_tokens = u.get("input_tokens", 0)
     res.output_tokens = u.get("output_tokens", 0)
@@ -124,6 +127,7 @@ def main():
     ap.add_argument("--quick", action="store_true")
     ap.add_argument("--jobs", type=int, default=1, help="agents run in parallel, each with its own fixture server")
     ap.add_argument("--tags", help="only tasks with one of these tags, e.g. bench or safety,form")
+    ap.add_argument("--resume", help="results folder of an interrupted run: skip runs already recorded there and append")
     ap.add_argument("--suite", choices=["fixtures", "live"], default="fixtures",
                     help="live = public pages, answer-verified, reported separately")
     a = ap.parse_args()
@@ -136,9 +140,13 @@ def main():
         if a.tags:
             want = set(a.tags.split(","))
             tasks = [t for t in tasks if want & set(t.tags)]
-    out_dir = ROOT / "evals/results" / (datetime.now().strftime("%Y%m%d-%H%M%S") + "-claude-cli" + ("-live" if a.suite == "live" else ""))
+    out_dir = (Path(a.resume).resolve() if a.resume else
+               ROOT / "evals/results" / (datetime.now().strftime("%Y%m%d-%H%M%S") + "-claude-cli" + ("-live" if a.suite == "live" else "")))
     log_dir = out_dir / "transcripts"
-    log_dir.mkdir(parents=True)
+    log_dir.mkdir(parents=True, exist_ok=bool(a.resume))
+    done = set()
+    if a.resume and (out_dir / "runs.jsonl").exists():
+        done = {(r["run"], r["task"], r["mode"]) for r in map(json.loads, (out_dir / "runs.jsonl").read_text().splitlines()) if r}
     (out_dir / "meta.json").write_text(json.dumps({
         "config": {**CONFIG, "model": f"{CONFIG['model']} via claude -p"}, "modes": modes,
         "tasks": [t.id for t in tasks], "runs": a.runs, "cached": True, "driver": "claude-cli", "suite": a.suite}, indent=2))
@@ -150,7 +158,9 @@ def main():
         raise SystemExit("missing MCP server(s), run ./install.sh --with-eval:\n  " + "\n  ".join(missing))
     print(f"{len(tasks)} tasks x {len(modes)} modes x {a.runs} run(s) via claude -p ({MODEL}), {a.jobs} job(s); "
           f"results in {out_dir}", flush=True)
-    jobs = [(r + 1, task, mode) for r in range(a.runs) for task in tasks for mode in modes]
+    jobs = [(r + 1, task, mode) for r in range(a.runs) for task in tasks for mode in modes if (r + 1, task.id, mode) not in done]
+    if done:
+        print(f"resuming: {len(done)} run(s) already recorded, {len(jobs)} to go", flush=True)
     local = threading.local()
     servers, lock = [], threading.Lock()
     root_tmp = tempfile.TemporaryDirectory(prefix="leanb-claude-")
@@ -166,7 +176,7 @@ def main():
         run, task, mode = job
         return run_one(local.base, task, mode, run, local.tmp, log_dir)
 
-    with open(out_dir / "runs.jsonl", "w") as runs_f, ThreadPoolExecutor(max(1, a.jobs)) as ex:
+    with open(out_dir / "runs.jsonl", "a" if a.resume else "w") as runs_f, ThreadPoolExecutor(max(1, a.jobs)) as ex:
         for res in ex.map(work, jobs):
             runs_f.write(json.dumps({**asdict(res), "total_tokens": res.total_tokens,
                                      "weighted_input": res.weighted_input()}) + "\n")
