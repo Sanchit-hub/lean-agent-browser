@@ -1,0 +1,30 @@
+{
+  "run": "20261116-014650-claude-cli",
+  "model": "claude-sonnet-5-5 via claude -p",
+  "tasks": [
+    "rerender",
+    "nested-frame",
+    "srcdoc-poll",
+    "faq",
+    "slider",
+    "switches",
+    "returns",
+    "remove-one",
+    "same-name"
+  ],
+  "runs": 1,
+  "modes": {
+    "lean": {
+      "success": 9,
+      "attempts": 9,
+      "median_total_tokens": 12339,
+      "p95_total_tokens": 13080,
+      "median_wall_s": 10.3,
+      "p95_wall_s": 11.7,
+      "failure_categories": {},
+      "mean_turns": 3.89,
+      "mean_wall_s": 10.01,
+      "failures": []
+    }
+  }
+}

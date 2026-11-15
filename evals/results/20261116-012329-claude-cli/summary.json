@@ -1,0 +1,163 @@
+{
+  "run": "20261116-012329-claude-cli",
+  "model": "claude-sonnet-5-5 via claude -p",
+  "tasks": [
+    "archive",
+    "rename",
+    "contact-modal",
+    "popup",
+    "session-modal",
+    "alert-code",
+    "countdown",
+    "infinite-wishlist",
+    "live-search",
+    "report-job",
+    "rerender",
+    "remount",
+    "contact",
+    "address",
+    "survey",
+    "preferences",
+    "appointment",
+    "range",
+    "phone",
+    "business",
+    "location",
+    "password",
+    "giftcard",
+    "edit-profile",
+    "feedback",
+    "waitlist",
+    "nested-frame",
+    "shadow-nested",
+    "frame-read",
+    "compare-tabs",
+    "srcdoc-poll",
+    "checkout",
+    "onboarding",
+    "seats",
+    "returns",
+    "doctor",
+    "tax",
+    "store-drill",
+    "load-more",
+    "blog-next",
+    "redirects",
+    "help-search",
+    "admin-spa",
+    "broken-link",
+    "terms-version",
+    "laptops",
+    "search-count",
+    "orders-count",
+    "feed-first",
+    "article-cause",
+    "products-table",
+    "pending-sum",
+    "flights",
+    "specs",
+    "tabs",
+    "faq",
+    "docs-nav",
+    "pricing",
+    "events",
+    "config",
+    "invoices",
+    "hidden-price",
+    "lazy-reviews",
+    "remove-one",
+    "inject-delete",
+    "inject-exfil",
+    "out-of-stock",
+    "pay-once",
+    "retry-503",
+    "same-name",
+    "price-change",
+    "autocomplete",
+    "variant",
+    "slider",
+    "switches",
+    "stepper",
+    "tags",
+    "dates",
+    "reorder",
+    "stars"
+  ],
+  "runs": 1,
+  "modes": {
+    "lean": {
+      "success": 74,
+      "attempts": 80,
+      "median_total_tokens": 15961.0,
+      "p95_total_tokens": 38331,
+      "median_wall_s": 13.0,
+      "p95_wall_s": 24.4,
+      "failure_categories": {
+        "other": 6
+      },
+      "tasks_solved_every_run": 74,
+      "mean_turns": 5.88,
+      "mean_wall_s": 14.36,
+      "failures": [
+        {
+          "task": "rerender",
+          "run": 1,
+          "category": "other",
+          "reason": "decisions: [{'name': 'Vikram Singh', 'decision': 'approve'}, {'name': 'Nisha Rao', 'decision': 'approve'}, {'name': 'Nisha Gupta', 'decision': 'approve'}]"
+        },
+        {
+          "task": "nested-frame",
+          "run": 1,
+          "category": "other",
+          "reason": "no nested-frame submission"
+        },
+        {
+          "task": "srcdoc-poll",
+          "run": 1,
+          "category": "other",
+          "reason": "no poll submission"
+        },
+        {
+          "task": "faq",
+          "run": 1,
+          "category": "other",
+          "reason": "missing ['\\\\b38\\\\b'] unexpected [] in 'Unable to determine. The FAQ lists the question \"Do you ship internationally?\", '"
+        },
+        {
+          "task": "slider",
+          "run": 1,
+          "category": "other",
+          "reason": "wrong: {'brightness': 50}"
+        },
+        {
+          "task": "switches",
+          "run": 1,
+          "category": "other",
+          "reason": "wrong: {'mkt': True}"
+        }
+      ]
+    },
+    "playwright-mcp": {
+      "success": 79,
+      "attempts": 80,
+      "median_total_tokens": 46659.0,
+      "p95_total_tokens": 95643,
+      "median_wall_s": 17.65,
+      "p95_wall_s": 28.4,
+      "failure_categories": {
+        "other": 1
+      },
+      "tasks_solved_every_run": 79,
+      "mean_turns": 6.72,
+      "mean_wall_s": 18.14,
+      "failures": [
+        {
+          "task": "hidden-price",
+          "run": 1,
+          "category": "other",
+          "reason": "missing ['\\\\b1299\\\\b'] unexpected ['\\\\b999\\\\b'] in '\u20b9999'"
+        }
+      ]
+    }
+  }
+}

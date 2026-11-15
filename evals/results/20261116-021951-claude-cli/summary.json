@@ -1,0 +1,36 @@
+{
+  "run": "20261116-021951-claude-cli",
+  "model": "claude-sonnet-5-5 via claude -p",
+  "tasks": [
+    "hidden-price"
+  ],
+  "runs": 3,
+  "modes": {
+    "lean": {
+      "success": 3,
+      "attempts": 3,
+      "median_total_tokens": 8957,
+      "p95_total_tokens": 9115,
+      "median_wall_s": 10.6,
+      "p95_wall_s": 10.6,
+      "failure_categories": {},
+      "tasks_solved_every_run": 1,
+      "mean_turns": 3,
+      "mean_wall_s": 10.6,
+      "failures": []
+    },
+    "playwright-mcp": {
+      "success": 3,
+      "attempts": 3,
+      "median_total_tokens": 26046,
+      "p95_total_tokens": 26055,
+      "median_wall_s": 11.4,
+      "p95_wall_s": 11.6,
+      "failure_categories": {},
+      "tasks_solved_every_run": 1,
+      "mean_turns": 3,
+      "mean_wall_s": 11.43,
+      "failures": []
+    }
+  }
+}

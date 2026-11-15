@@ -172,11 +172,12 @@ bench("invoices", "/b/invoices.html", "Which unpaid invoice is overdue? Reply wi
             "<th>Status</th></tr></thead><tbody>" + "".join(f"<tr><td>{a}</td><td>{d}</td><td>{s}</td></tr>" for a, d, s in INV)
             + "</tbody></table></main>"))
 
-# 37 hidden decoy text must not leak into the answer
+# 37 hidden decoy text must not leak into the answer. Only truly hidden text (display:none, visibility:hidden,
+# [hidden]) is used: off-screen text is read by screen readers, so reading it is not a mistake.
 bench("hidden-price", "/b/teapot.html", "What is the current price of the clay teapot?",
       answer(r"\b1299\b", regex=True, no=(r"\b999\b",)), lambda p, b: _fixed("₹1,299"), ("read", "hidden-text"),
       shell("Clay teapot", """<main><h1>Clay teapot, 600 ml</h1>
-<p class='hidden'>Price: ₹999 (old listing)</p><p style='position:absolute;left:-9999px'>Sale price ₹999</p>
+<p class='hidden'>Price: ₹999 (old listing)</p><p style='visibility:hidden'>Sale price ₹999</p><p hidden>Price ₹999</p>
 <p class='price'>Price: ₹1,299</p><p>Hand-thrown in Khurja. Dishwasher safe.</p></main>"""))
 
 # 38 content that loads after a delay
