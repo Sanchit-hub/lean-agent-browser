@@ -13,15 +13,14 @@ autonomous agent.
 - keep the engine replaceable
 - safe by default
 
-**Platform decision:** macOS (Apple Silicon) only, by the maintainer's choice. Linux and Windows
-support (listed as P0 in the November 2026 review) is deliberately out of scope for now. Only
-CI-tested platforms are listed as supported.
+**Platforms:** macOS (Apple Silicon) and Linux (x86_64, arm64), both tested in CI since v0.4.0. Windows is
+out of scope. Only CI-tested platforms are listed as supported.
 
-## Implemented (verified in code and tests, 2026-11-15)
+## Implemented (verified in code and tests, 2026-11-16)
 
 | Area | What exists | Where |
 |---|---|---|
-| Engines | Obscura **0.2.7** default (0.2.6 rollback), hash-pinned, sandboxed, parent-death watchdog; Chromium fallback with capability routing; hung pages move to Chromium | `engine.py`, `docs/engines.md` |
+| Engines | Obscura **0.2.7** default (0.2.6 rollback on macOS), hash-pinned per platform, sandboxed (`sandbox-exec` on macOS, bubblewrap on Linux), dies with its client; Chromium fallback with capability routing; hung pages move to Chromium | `engine.py`, `docs/engines.md` |
 | Context | Compact snapshots (`minimal`, `actions`, `read`, `full`), stable ids, collapse/expand/find, budgets, `within=` scoping | `snapshot.js`, `snapshot.py` |
 | Task-aware context | `extract(fields=…)` with per-item fields, missing and conflicting fields; `LeanBrowser.context(goal, include, max_tokens)` with provenance, omitted count and expand hint | `extract.js`, `tools.py`, `examples/task_context.py` |
 | Actions (v0.3) | Evidence-backed status (`verified` / `unverified` / `blocked` / `ambiguous` / `timed_out` / `done`); page errors beat "something changed"; submit-like actions need a strong signal; `expect=` postconditions; `last_outcome` dict; error categories; `confirm_risky` | `session.py`, `tests/test_reliability.py` |
@@ -30,17 +29,17 @@ CI-tested platforms are listed as supported.
 | Memory | Session-scoped notes with source URL, in-process only | `memory` tool |
 | Traces | Opt-in JSONL: run/step ids, outcome, recovery, error category; passwords, card/OTP/token-like fields and sensitive URL parameters redacted; page text opt-in; `leanb trace list / show / replay / export / delete` | `trace.py` |
 | Visual | `screenshot(annotate=true)` maps the image to ids | `session.py` |
-| Distribution | `install.sh`, `pip install` + `leanb install` + `leanb doctor`, macOS CI with a clean-install smoke test (wheel, fresh venv, MCP round trip) | `installer.py`, `scripts/smoke_clean_install.sh`, `.github/workflows/ci.yml` |
-| Benchmarks | Fixture suite (20 tasks, server-verified, including 2 reliability tasks) and live suite (5 tasks), comparing Playwright MCP and agent-browser; p95 and failure categories; tool-definition tokens reported separately | `evals/`, `docs/benchmark.md` |
+| Distribution | `install.sh`, `pip install` + `leanb install` + `leanb doctor`; CI on macOS 15, Ubuntu 24.04 x86_64 and arm64, each with a clean-install smoke test (wheel, fresh venv, MCP round trip) | `installer.py`, `scripts/smoke_clean_install.sh`, `.github/workflows/ci.yml` |
+| Benchmarks | Fixture suite of **100 tasks** in 9 categories, server-verified, each with a scripted reference solution; live suite (5 tasks); Lean vs Playwright MCP × 3 runs, agent-browser × 1; per-category success, tasks solved in every run, p95, failure categories; parallel runs (`--jobs`) | `evals/`, `evals/bench/`, `docs/benchmark.md` |
 
 ## Next (in order)
 
-1. **Benchmark breadth (v0.3 plan, not met yet):**
-   - grow the fixture suite toward 100 diverse tasks, 3–5 runs each
-   - 3 runs for agent-browser (it has 1 so far), and its CLI workflow as a separate row
-   - false-success and false-recovery counters
-2. **External release-candidate testing:** a few outside developers install it and complete a small set
+1. **External release-candidate testing:** a few outside developers install it and complete a small set
    of workflows.
+2. **Benchmark next steps:**
+   - tasks written by someone other than us, and a few real-site workflows with sandbox accounts
+   - 3 runs for agent-browser (it has 1), and its CLI workflow as a separate row
+   - false-success and false-recovery counters
 3. **Recovery metrics:** a stale-reference fixture set that measures recovery rate and false recovery.
 4. **Task context:**
    - `context()` across pagination (follow "next" while `new_only`)
@@ -64,7 +63,7 @@ CI-tested platforms are listed as supported.
 - more MCP tools just to have more tools
 - an LLM call per click
 - cross-session memory without demand
-- Linux/Windows (see the platform decision above)
+- Windows
 
 ## Claims policy
 
