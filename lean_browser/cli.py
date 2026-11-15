@@ -5,7 +5,7 @@
   leanb mcp                                       run the MCP server on stdio
   leanb install                                   download the engines (pinned, checksummed Obscura + Chromium)
   leanb doctor                                    check the install (hashes, sandbox, both engines)
-  leanb trace list | show [run|latest] [--full]   inspect traces (record them with --trace)
+  leanb trace list | show | replay | export | delete [run|latest|all]   traces (record with --trace)
   leanb bench [--quick] [--runs N] [--modes ...]  run the eval suite (needs the claude CLI or an API key)
 
 Common flags: --engine obscura|chromium, --allow-private-network, --config PATH
@@ -174,10 +174,12 @@ def main(argv=None):
     sub.add_parser("install", help="download the engines (Obscura + Chromium) into ~/.lean-browser")
     sub.add_parser("doctor", help="check the install")
     p = sub.add_parser("trace", help="inspect recorded traces")
-    p.add_argument("what", choices=["list", "show"])
+    p.add_argument("what", choices=["list", "show", "replay", "export", "delete"])
     p.add_argument("run", nargs="?", default="latest")
     p.add_argument("--full", action="store_true", help="print each call's result")
     p.add_argument("--dir", help="trace folder (default ~/.lean-browser/traces; bench runs keep theirs in evals/results/*/traces)")
+    p.add_argument("--allow-actions", action="store_true", help="replay: also re-run actions on live (non-local) sites")
+    p.add_argument("--out", help="export: destination file")
     p = sub.add_parser("bench", help="run the eval suite with a real agent")
     p.add_argument("--agent", choices=["claude-cli", "api"], default="claude-cli",
                    help="claude-cli uses your Claude Code login (no API key); api uses ANTHROPIC_API_KEY")
@@ -193,7 +195,18 @@ def main(argv=None):
         asyncio.run(cmd_shell(a))
     elif a.cmd == "trace":
         from lean_browser import trace
-        print(trace.list_runs(a.dir) if a.what == "list" else trace.show_run(a.run, a.dir, full=a.full))
+        if a.what == "list":
+            print(trace.list_runs(a.dir))
+        elif a.what == "show":
+            print(trace.show_run(a.run, a.dir, full=a.full))
+        elif a.what == "replay":
+            print(asyncio.run(trace.replay(a.run, a.dir, allow_actions=a.allow_actions)))
+        elif a.what == "export":
+            if not a.out:
+                sys.exit("export needs --out <file>")
+            print(trace.export_run(a.run, a.out, a.dir))
+        elif a.what == "delete":
+            print(trace.delete_runs(a.run, a.dir))
     elif a.cmd == "bench":
         sys.exit(cmd_bench(a))
     elif a.cmd == "install":
