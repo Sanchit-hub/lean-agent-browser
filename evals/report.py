@@ -4,12 +4,36 @@ from __future__ import annotations
 import json
 import statistics
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 
 
 def _fmt(n: float) -> str:
     return f"{n:,.0f}"
+
+
+def p95(xs) -> float:
+    """Nearest-rank 95th percentile (with few runs this is close to the max; say so when reporting)."""
+    xs = sorted(xs)
+    return xs[max(0, -(-95 * len(xs) // 100) - 1)] if xs else 0
+
+
+def failure_category(r: dict) -> str | None:
+    """Why a run failed, so failures are counted by kind and not only as pass/fail."""
+    if r["success"]:
+        return None
+    reason, stop = (r.get("reason") or "").lower(), (r.get("stop") or "").lower()
+    if "timeout" in stop:
+        return "timeout"
+    if "max" in stop and ("step" in stop or "turn" in stop):
+        return "step_limit"
+    if any(e.startswith("Error") or "error" in e.lower() for e in r.get("errors", []) if not e.startswith("cost_usd")):
+        return "tool_error"
+    if "no submission" in reason or "not submitted" in reason:
+        return "task_not_completed"
+    if "answer" in reason or reason.startswith("want"):
+        return "wrong_answer"
+    return "other"
 
 
 def write_report(out_dir: Path) -> Path:
@@ -26,14 +50,15 @@ def write_report(out_dir: Path) -> Path:
             by_mode[r["mode"]].append(r)
         title = "Prompt caching ON (cost-weighted input)" if cached else "Raw tokens (prompt caching OFF)"
         lines += [f"## Summary — {title}", "",
-                  "| Mode | Success | Median total tokens | Mean total tokens | Mean steps | Mean time (s) | Tool schema tokens |",
-                  "|---|---|---|---|---|---|---|"]
+                  "| Mode | Success | Median total tokens | p95 total tokens | Mean steps | Median time (s) | p95 time (s) | Tool schema tokens |",
+                  "|---|---|---|---|---|---|---|---|"]
         for mode, xs in by_mode.items():
             tok = [x["weighted_input"] + x["output_tokens"] if cached else x["total_tokens"] for x in xs]
             succ = sum(x["success"] for x in xs)
+            wall = [x["wall_s"] for x in xs]
             lines.append(f"| {mode} | {succ}/{len(xs)} ({100 * succ / len(xs):.0f}%) | {_fmt(statistics.median(tok))} | "
-                         f"{_fmt(statistics.mean(tok))} | {statistics.mean(x['steps'] for x in xs):.1f} | "
-                         f"{statistics.mean(x['wall_s'] for x in xs):.1f} | {meta.get('schema_tokens', {}).get(mode, '—')} |")
+                         f"{_fmt(p95(tok))} | {statistics.mean(x['steps'] for x in xs):.1f} | "
+                         f"{statistics.median(wall):.1f} | {p95(wall):.1f} | {meta.get('schema_tokens', {}).get(mode, '—')} |")
         lines.append("")
 
         tasks = list(dict.fromkeys(r["task"] for r in rs))
@@ -56,10 +81,11 @@ def write_report(out_dir: Path) -> Path:
 
     fails = [r for r in runs if not r["success"]]
     if fails:
-        lines += ["## Failures", "", "| Mode | Task | Run | Stop | Reason | Tool errors |", "|---|---|---|---|---|---|"]
+        lines += ["## Failures", "", "| Mode | Task | Run | Category | Stop | Reason | Tool errors |", "|---|---|---|---|---|---|---|"]
         for r in fails:
             errs = "; ".join(r["errors"][:2]).replace("|", "/")
-            lines.append(f"| {r['mode']} | {r['task']} | {r['run']} | {r['stop']} | {r['reason'][:90].replace('|', '/')} | {errs[:120]} |")
+            lines.append(f"| {r['mode']} | {r['task']} | {r['run']} | {failure_category(r)} | {r['stop']} | "
+                         f"{r['reason'][:90].replace('|', '/')} | {errs[:120]} |")
         lines.append("")
 
     path = out_dir / "report.md"
@@ -71,9 +97,14 @@ def write_report(out_dir: Path) -> Path:
         summary["modes"][mode] = {
             "success": sum(r["success"] for r in xs), "attempts": len(xs),
             "median_total_tokens": statistics.median(r["total_tokens"] for r in xs),
+            "p95_total_tokens": p95([r["total_tokens"] for r in xs]),
+            "median_wall_s": round(statistics.median(r["wall_s"] for r in xs), 2),
+            "p95_wall_s": round(p95([r["wall_s"] for r in xs]), 2),
+            "failure_categories": dict(Counter(failure_category(r) for r in xs if not r["success"])),
             "mean_turns": round(statistics.mean(r["steps"] for r in xs), 2),
             "mean_wall_s": round(statistics.mean(r["wall_s"] for r in xs), 2),
-            "failures": [{"task": r["task"], "run": r["run"], "reason": r["reason"]} for r in xs if not r["success"]],
+            "failures": [{"task": r["task"], "run": r["run"], "category": failure_category(r), "reason": r["reason"]}
+                         for r in xs if not r["success"]],
         }
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=2))
     # Only a full run (all 18 tasks, >= 3 runs) replaces the committed evals/report.md;

@@ -4,7 +4,7 @@ No API key needed: it runs on the user's Claude subscription login. The agent ge
 browser MCP server under test (built-in tools disabled, our own system prompt), so the two MCP
 modes compete on equal terms:
 
-  lean            lean_browser's 6 tools  (leanb mcp)
+  lean            lean_browser's 7 tools  (leanb mcp)
   playwright-mcp  Microsoft's Playwright MCP 0.0.83 (aria snapshots with refs)
   agent-browser   Vercel's agent-browser 0.41.0 (`agent-browser mcp`, default "core" tool profile)
 
