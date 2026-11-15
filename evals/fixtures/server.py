@@ -19,7 +19,6 @@ from urllib.parse import parse_qs, urlparse
 
 SITE = Path(__file__).parent / "site"
 LOCK = threading.Lock()
-STATE: dict = {"submissions": [], "hits": []}
 
 # ---------- deterministic generated data ----------
 _rng = random.Random(42)
@@ -131,6 +130,10 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
 
+    @property
+    def state(self) -> dict:  # one state per server, so several servers can run evals in parallel
+        return self.server.state
+
     def _send(self, code: int, body: bytes, ctype: str = "text/html; charset=utf-8", headers: dict | None = None):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
@@ -159,18 +162,18 @@ class Handler(BaseHTTPRequestHandler):
         path = u.path
         if path == "/api/state":
             with LOCK:
-                return self._json(STATE)
+                return self._json(self.state)
         if path == "/api/reset":
             with LOCK:
-                STATE["submissions"].clear()
-                STATE["hits"].clear()
+                self.state.clear()
+                self.state.update(submissions=[], hits=[])
             return self._json({"ok": True})
         if path == "/api/feed":
             off = int(q.get("offset", 0))
             return self._json(FEED[off:off + 10])
         if path.startswith("/api/exfil"):
             with LOCK:
-                STATE["hits"].append({"path": self.path})
+                self.state["hits"].append({"path": self.path})
             return self._json({"ok": True})
         if path == "/search.html":
             return self._send(200, render_search(q.get("q", "")))
@@ -186,6 +189,12 @@ class Handler(BaseHTTPRequestHandler):
             if self._cookies().get("session") == "demo-session":
                 return self._send(200, page("Account", "<main><h1>Welcome back, demo</h1></main>"))
             return self._send(302, b"", headers={"Location": "/login.html"})
+        from evals.bench import get_page
+        hit = get_page(path, q)
+        if isinstance(hit, tuple) and hit[0] == "redirect":
+            return self._send(302, b"", headers={"Location": hit[1]})
+        if hit is not None:
+            return self._send(200, *hit) if isinstance(hit, tuple) else self._send(200, hit)
         if path in ("/", ""):
             path = "/index.html"
         f = (SITE / path.lstrip("/")).resolve()
@@ -229,7 +238,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _record(self, task: str, ctype: str, fields: dict, has_file: bool):
         with LOCK:
-            STATE["submissions"].append({"task": task, "ctype": ctype, "fields": fields, "has_file": has_file,
+            self.state["submissions"].append({"task": task, "ctype": ctype, "fields": fields, "has_file": has_file,
                                          "cookies": self._cookies()})
 
     def do_POST(self):
@@ -248,6 +257,13 @@ class Handler(BaseHTTPRequestHandler):
                                                        "Please choose another.</p><a href='/signup.html'>Back to sign up</a></main>"))
             self._record("signup", ctype, {**fields, "password": len(fields.get("password", ""))}, False)
             return self._send(200, page("Welcome", "<main><h1>Account created</h1></main>"))
+        from evals.bench import post_hook
+        hooked = post_hook(path, fields, self.state)
+        if hooked is not None:
+            code, body, task = hooked
+            if task:
+                self._record(task, ctype, fields, has_file)
+            return self._send(code, body) if isinstance(body, bytes) else self._json(body, code)
         if path.startswith("/api/submit/"):
             task = path.rsplit("/", 1)[1]
             delay = float(parse_qs(urlparse(self.path).query).get("delay", ["0"])[0])
@@ -261,8 +277,14 @@ class Handler(BaseHTTPRequestHandler):
         return self._send(404, b"not found", "text/plain")
 
 
-def serve(port: int) -> ThreadingHTTPServer:
+def make_server(port: int) -> ThreadingHTTPServer:
     srv = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    srv.state = {"submissions": [], "hits": []}
+    return srv
+
+
+def serve(port: int) -> ThreadingHTTPServer:
+    srv = make_server(port)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return srv
 
@@ -270,4 +292,4 @@ def serve(port: int) -> ThreadingHTTPServer:
 if __name__ == "__main__":
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8765
     print(f"fixtures on http://127.0.0.1:{port}", flush=True)
-    ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()
+    make_server(port).serve_forever()

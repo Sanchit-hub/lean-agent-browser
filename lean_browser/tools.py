@@ -31,8 +31,8 @@ TOOLS: list[dict] = [
      "input_schema": {"type": "object", "properties": {"mode": {"enum": MODES}, "budget": {"type": "integer"},
                                                        "expand": {"type": "string"}, "more": {"type": "string"},
                                                        "find": {"type": "string"}, "within": {"type": "integer"}}}},
-    {"name": "act", "description": "Act on id -> status + changes. select: label; tab: list|new:URL|switch:N|close:N; "
-                                   "dialog: accept|dismiss. expect: text|url:X|gone:ID",
+    {"name": "act", "description": "Act on id -> status + changes. select: label. tab: list|new:URL|switch:N|close:N; "
+                                   "dialog: accept[:TEXT]|dismiss. expect: text|url:X|gone:ID",
      "input_schema": {"type": "object", "properties": {"action": {"enum": ACTIONS}, "id": {"type": "integer"},
                                                        "value": {"type": "string"}, "expect": {"type": "string"},
                                                        "dry_run": {"type": "boolean"}}, "required": ["action"]}},
@@ -50,7 +50,7 @@ TOOLS: list[dict] = [
      "input_schema": {"type": "object", "properties": {"action": {"enum": ["set", "get", "list", "delete", "clear"]},
                                                        "key": {"type": "string"}, "value": {"type": "string"}},
                       "required": ["action"]}},
-    {"name": "screenshot", "description": "PNG of viewport or element; annotate labels ids. Visual only.",
+    {"name": "screenshot", "description": "PNG of viewport or element; annotate labels ids.",
      "input_schema": {"type": "object", "properties": {"id": {"type": "integer"}, "annotate": {"type": "boolean"}}}},
 ]
 TOOL_NAMES = {t["name"] for t in TOOLS}

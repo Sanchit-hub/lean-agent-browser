@@ -124,11 +124,19 @@ OBSCURA_DIALOG_SHIM = r"""
   if (window.__labDialog) return;
   const st = window.__labDialog = { policy: 'accept', log: [] };
   const take = () => { const p = st.policy; st.policy = 'accept'; return p; };
+  const ok = p => p.startsWith('accept');
   window.alert = m => { st.log.push(['alert', String(m), take()]); };
-  window.confirm = m => { const p = take(); st.log.push(['confirm', String(m), p]); return p === 'accept'; };
-  window.prompt = (m, d) => { const p = take(); st.log.push(['prompt', String(m), p]); return p === 'accept' ? (d || '') : null; };
+  window.confirm = m => { const p = take(); st.log.push(['confirm', String(m), p]); return ok(p); };
+  window.prompt = (m, d) => { const p = take(); st.log.push(['prompt', String(m), p]);
+    return ok(p) ? (p.startsWith('accept:') ? p.slice(7) : (d || '')) : null; };
 })();
 """
+
+def _dialog_word(policy: str) -> str:
+    if policy.startswith("accept:"):
+        return f"accepted with {policy[7:]!r}"
+    return "accepted" if policy == "accept" else "dismissed"
+
 
 TRUTHY = {"true", "on", "yes", "1", "checked", "y"}
 NEEDS_ID = {"click", "hover", "check", "uncheck", "clear", "focus", "fill", "select", "upload"}
@@ -299,9 +307,12 @@ class Session:
 
         async def on_dialog(d):
             policy, ts.dialog_policy = ts.dialog_policy, "accept"
-            ts.notes.append(f"dialog {d.type} {d.message!r} {'accepted' if policy == 'accept' else 'dismissed'}")
+            ts.notes.append(f"dialog {d.type} {d.message!r} {_dialog_word(policy)}")
             try:
-                await (d.accept() if policy == "accept" else d.dismiss())
+                if policy.startswith("accept:") and d.type == "prompt":
+                    await d.accept(policy[7:])
+                else:
+                    await (d.accept() if policy.startswith("accept") else d.dismiss())
             except Exception:
                 pass
         page.on("dialog", on_dialog)
@@ -579,11 +590,15 @@ class Session:
         if action == "tab":
             return await self._tab(str(value or "list"))
         if action == "dialog":
-            v = str(value or "").lower()
-            if v not in ("accept", "dismiss"):
-                raise ActionError("dialog value must be accept or dismiss")
+            v = str(value or "")
+            if v.lower() in ("accept", "dismiss"):
+                v = v.lower()
+            elif not v.lower().startswith("accept:"):
+                raise ActionError("dialog value must be accept, dismiss or accept:TEXT (text for a prompt)")
+            else:
+                v = "accept:" + v[7:]
             self.cur.dialog_policy = v
-            return f"the next browser dialog will be {v}ed"
+            return f"the next browser dialog will be {_dialog_word(v)}"
 
         ts = self.cur
         before = ts.snapper.last or await self._take(ts)
@@ -767,7 +782,7 @@ class Session:
         except Exception:
             return
         for kind, msg, policy in log:
-            ts.notes.append(f"dialog {kind} {msg!r} {'accepted' if policy == 'accept' else 'dismissed'}")
+            ts.notes.append(f"dialog {kind} {msg!r} {_dialog_word(policy)}")
         if log:
             ts.dialog_policy = "accept"
 

@@ -236,3 +236,14 @@ async def test_dry_run_surfaces_ambiguity(s):
         '<li>Draft <button>Remove</button></li><li>Draft <button>Remove</button></li>'; }""")
     with pytest.raises(ActionError, match="ambiguous"):
         await s.act("click", rm, dry_run=True)
+
+
+async def test_prompt_dialog_gets_text(s):
+    out = await s.open(s.base + "/b/folders.html")
+    rid = int(re.findall(r'(\d+): button "Rename"', out)[1])  # the second folder: "Untitled folder"
+    assert "accepted with 'Invoices 2026'" in await s.act("dialog", None, "accept:Invoices 2026")
+    res = await s.act("click", rid)
+    assert "Renamed to Invoices 2026" in res, res
+    assert subs(s.base, "rename")[0]["fields"] == {"old": "Untitled folder", "new": "Invoices 2026"}
+    with pytest.raises(ActionError, match="accept:TEXT"):
+        await s.act("dialog", None, "maybe")

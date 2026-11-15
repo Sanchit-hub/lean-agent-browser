@@ -200,3 +200,7 @@ async def honest_failure(p: Page, base):
 SOLUTIONS = {f.__name__.replace("_", "-") if f.__name__ in ("order_once", "honest_failure") else f.__name__: f
              for f in [login, signup, wizard, apply, booking, newsletter, search, orders, feed, spa,
                        files, todo, iframe, shadow, newtab, article, injection, editor, order_once, honest_failure]}
+
+from evals.bench import REG as _BENCH  # noqa: E402
+
+SOLUTIONS.update({b.id: b.oracle for b in _BENCH})

@@ -14,6 +14,11 @@ token numbers are reported both as total processed tokens and as cost-weighted l
 Usage:
   python -m evals.claude_driver --quick                 # 6 tasks x 2 modes x 1 run
   python -m evals.claude_driver --tasks login,booking --modes lean
+  python -m evals.claude_driver --runs 3 --jobs 4       # all 100 tasks, 4 agents at a time
+
+With --jobs N, each worker gets its own fixture server (own recorded state) and working folder, so
+parallel runs can't see each other's submissions. Wall-clock times are measured per run, but they are
+noisier under parallel load; tokens and success are unaffected.
 """
 from __future__ import annotations
 
@@ -23,7 +28,9 @@ import os
 import shutil
 import subprocess
 import tempfile
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 import urllib.request
 from dataclasses import asdict
 from datetime import datetime
@@ -115,6 +122,8 @@ def main():
     ap.add_argument("--tasks")
     ap.add_argument("--runs", type=int, default=1)
     ap.add_argument("--quick", action="store_true")
+    ap.add_argument("--jobs", type=int, default=1, help="agents run in parallel, each with its own fixture server")
+    ap.add_argument("--tags", help="only tasks with one of these tags, e.g. bench or safety,form")
     ap.add_argument("--suite", choices=["fixtures", "live"], default="fixtures",
                     help="live = public pages, answer-verified, reported separately")
     a = ap.parse_args()
@@ -124,6 +133,9 @@ def main():
         tasks = [pool[t] for t in a.tasks.split(",")] if a.tasks else list(LIVE_TASKS)
     else:
         tasks = [BY_ID[t] for t in (QUICK if a.quick else (a.tasks.split(",") if a.tasks else [t.id for t in TASKS]))]
+        if a.tags:
+            want = set(a.tags.split(","))
+            tasks = [t for t in tasks if want & set(t.tags)]
     out_dir = ROOT / "evals/results" / (datetime.now().strftime("%Y%m%d-%H%M%S") + "-claude-cli" + ("-live" if a.suite == "live" else ""))
     log_dir = out_dir / "transcripts"
     log_dir.mkdir(parents=True)
@@ -136,22 +148,35 @@ def main():
     missing = [f"{m}: {need[m]}" for m in modes if m in need and not need[m].exists()]
     if missing:
         raise SystemExit("missing MCP server(s), run ./install.sh --with-eval:\n  " + "\n  ".join(missing))
-    port = _free_port()
-    srv = serve(port)
-    base = f"http://127.0.0.1:{port}"
-    print(f"{len(tasks)} tasks x {len(modes)} modes x {a.runs} run(s) via claude -p ({MODEL}); results in {out_dir}", flush=True)
-    with tempfile.TemporaryDirectory(prefix="leanb-claude-") as td, open(out_dir / "runs.jsonl", "w") as runs_f:
-        for r in range(a.runs):
-            for task in tasks:
-                for mode in modes:
-                    res = run_one(base, task, mode, r + 1, Path(td), log_dir)
-                    runs_f.write(json.dumps({**asdict(res), "total_tokens": res.total_tokens,
-                                             "weighted_input": res.weighted_input()}) + "\n")
-                    runs_f.flush()
-                    print(f"[{'PASS' if res.success else 'FAIL'}] {mode:<15} {task.id:<11} turns={res.steps:<3} "
-                          f"tokens={res.total_tokens:<8} {res.errors[0]:<22} {res.wall_s}s "
-                          f"{'' if res.success else res.reason[:70]}", flush=True)
-    srv.shutdown()
+    print(f"{len(tasks)} tasks x {len(modes)} modes x {a.runs} run(s) via claude -p ({MODEL}), {a.jobs} job(s); "
+          f"results in {out_dir}", flush=True)
+    jobs = [(r + 1, task, mode) for r in range(a.runs) for task in tasks for mode in modes]
+    local = threading.local()
+    servers, lock = [], threading.Lock()
+    root_tmp = tempfile.TemporaryDirectory(prefix="leanb-claude-")
+
+    def work(job):
+        if not hasattr(local, "base"):  # one fixture server and working folder per worker thread
+            port = _free_port()
+            srv = serve(port)
+            with lock:
+                servers.append(srv)
+            local.base = f"http://127.0.0.1:{port}"
+            local.tmp = Path(tempfile.mkdtemp(dir=root_tmp.name))
+        run, task, mode = job
+        return run_one(local.base, task, mode, run, local.tmp, log_dir)
+
+    with open(out_dir / "runs.jsonl", "w") as runs_f, ThreadPoolExecutor(max(1, a.jobs)) as ex:
+        for res in ex.map(work, jobs):
+            runs_f.write(json.dumps({**asdict(res), "total_tokens": res.total_tokens,
+                                     "weighted_input": res.weighted_input()}) + "\n")
+            runs_f.flush()
+            print(f"[{'PASS' if res.success else 'FAIL'}] {res.mode:<15} {res.task:<18} turns={res.steps:<3} "
+                  f"tokens={res.total_tokens:<8} {res.errors[0]:<22} {res.wall_s}s "
+                  f"{'' if res.success else res.reason[:70]}", flush=True)
+    for srv in servers:
+        srv.shutdown()
+    root_tmp.cleanup()
     from evals.report import write_report
     print(f"\nReport: {write_report(out_dir)}")
 
