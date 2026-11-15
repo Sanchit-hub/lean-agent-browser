@@ -242,6 +242,19 @@
     e.name = accName(el);
     if ((role === 'link' || role === 'button' || role === 'clickable') && !e.name) return null;  // nameless: drop
     e.id = assignId(el, role, e.name);
+    // Fingerprint for safe stale-id recovery (not rendered): tells apart controls with the same role+name.
+    const fp = {};
+    const href = el.getAttribute && el.getAttribute('href');
+    if (href) fp.href = href.length > 120 ? href.slice(0, 120) : href;
+    const tid = el.getAttribute('data-testid') || el.getAttribute('data-test') || el.getAttribute('data-qa') || el.getAttribute('data-cy');
+    if (tid) fp.testid = tid;
+    if (el.getAttribute('name')) fp.nm = el.getAttribute('name');
+    const form = el.form || (el.closest && el.closest('form'));
+    if (form) fp.form = form.id || form.getAttribute('name') || form.getAttribute('action') || 'form';
+    const row = el.closest && el.closest('tr,li,[role=row],article');
+    if (row) { const rt = (row.textContent || '').replace(/\s+/g, ' ').trim(); if (rt) fp.ctx = rt.slice(0, 60); }
+    fp.lm = landmark(el);
+    e.fp = fp;
     if (el.required || el.hasAttribute('required') || el.getAttribute('aria-required') === 'true') e.req = true;
     if (el.disabled || el.getAttribute('aria-disabled') === 'true') e.disabled = true;
     const ty = (el.getAttribute && el.getAttribute('type') || '').toLowerCase();

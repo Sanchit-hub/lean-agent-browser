@@ -526,16 +526,25 @@ class Session:
             raise ActionError(f"id {el_id} not found (page changed?) — call snapshot()")
         fresh = await self._take(ts)
         idx = _index(fresh)
-        cands = {e["id"]: e for e in idx.values()
-                 if e["role"] == entry["role"] and e.get("name") == entry.get("name")
-                 and e.get("_option") == entry.get("_option")}
         role, nm = entry["role"], entry.get("name", "")
+        old_fp = entry.get("fp") or {}
+        same = {e["id"]: e for e in idx.values()
+                if e["role"] == role and e.get("name") == nm and e.get("_option") == entry.get("_option")}
+        # A candidate may not contradict any fingerprint field the old element had (link target, test id,
+        # field name, form, row text, landmark). This stops "the other Delete button" from being clicked.
+        keys = [k for k in ("testid", "href", "nm", "form", "ctx", "lm") if old_fp.get(k)]
+        cands = {i: e for i, e in same.items() if all((e.get("fp") or {}).get(k) == old_fp[k] for k in keys)}
+        matched = ", ".join(["role", "name"] + keys)
         if len(cands) == 1:
             new = next(iter(cands.values()))
-            return new["id"], fresh, new, f'recovered: id {el_id} was re-rendered as {new["id"]} (same {role} "{nm}")\n'
+            return new["id"], fresh, new, (f'recovered: id {el_id} was re-rendered as {new["id"]} '
+                                           f'(same {role} "{nm}"; matched on {matched})\n')
         if len(cands) > 1:
             raise ActionError(f'ambiguous: id {el_id} is gone and {len(cands)} elements match {role} "{nm}" '
                               f"(ids {', '.join(map(str, sorted(cands)))}) — pick one")
+        if same:
+            raise ActionError(f'id {el_id} is gone: {len(same)} {role} "{nm}" exist(s) but none match the original '
+                              f"({', '.join(f'{k}={old_fp[k]!r}' for k in keys)}) — call snapshot()")
         raise ActionError(f'id {el_id} is gone: {role} "{nm}" is no longer on the page — call snapshot()')
 
     async def _target_state(self, ts: TabState, el_id) -> dict | None:

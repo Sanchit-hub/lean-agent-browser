@@ -276,3 +276,25 @@ async def test_late_popup_is_still_reported(s):
     d = await s.act("click", idof(out, 'link "Open the developer console"'))
     assert d.startswith("status: verified (new tab opened)") and len(s.tabs) == 2
     assert "page: Developer console" in d
+
+
+async def test_recovery_uses_fingerprint_to_pick_the_right_twin(s):
+    out = await s.open(s.base + "/recover.html")
+    beta_edit = [int(m) for m in re.findall(r'(\d+): link "Edit"', out)][1]
+    # Re-render only the Beta row's link: two "Edit" links still exist, the href tells them apart.
+    await s.cur.page.evaluate("""() => { const a = document.querySelector('a[href="/edit/beta"]');
+        const c = a.cloneNode(true); delete c.dataset.labId; a.replaceWith(c); }""")
+    d = await s.act("click", beta_edit)
+    assert "recovered:" in d and "href" in d and "/edit/beta" in d   # navigated to the Beta edit page
+
+
+async def test_recovery_refuses_a_contradicting_twin(s):
+    out = await s.open(s.base + "/recover.html")
+    save = idof(out, 'button "Save"')
+    # Replace the button with a same-named one that has a different test id: must not be clicked.
+    await s.cur.page.evaluate("""() => { const b = document.querySelector('[data-testid=save-draft]');
+        const c = document.createElement('button'); c.textContent = 'Save'; c.dataset.testid = 'save-and-publish';
+        c.onclick = () => document.getElementById('out').textContent = 'published!'; b.replaceWith(c); }""")
+    with pytest.raises(ActionError, match="none match the original"):
+        await s.act("click", save)
+    assert await s.cur.page.text_content("#out") == ""
