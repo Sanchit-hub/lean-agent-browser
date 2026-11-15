@@ -94,6 +94,27 @@ def render_article() -> bytes:
     return page("The Halden Valley", body)
 
 
+LAPTOPS = [
+    # name, price, gpu, ram, availability   (None = field missing on the card)
+    ("Aero 14", 92990, "RTX 4060", "16 GB", "In stock"), ("Bolt 15", 78490, "RTX 4060", "16 GB", "In stock"),
+    ("Core 16", 71990, "RTX 4050", "16 GB", "In stock"), ("Dash 15", 84990, "RTX 4060", "8 GB", "In stock"),
+    ("Edge 14", 99990, "RTX 4070", "16 GB", "Out of stock"), ("Flux 15", 81490, "RTX 4060", "32 GB", "In stock"),
+    ("Grid 15", 69990, None, "16 GB", "In stock"), ("Halo 16", 88990, "RTX 4060", "16 GB", "Only 2 left"),
+    ("Ion 15", 74990, "RTX 4060", None, "In stock"), ("Jet 14", 105990, "RTX 4070", "32 GB", "In stock"),
+    ("Kite 15", 79990, "RTX 4060", "16 GB", "Out of stock"), ("Lynx 16", 86490, "RTX 4060", "24 GB", "In stock"),
+]
+
+
+def render_laptops() -> bytes:
+    cards = []
+    for name, price, gpu, ram, avail in LAPTOPS:
+        specs = "".join(f"<li>{k}: {v}</li>" for k, v in (("GPU", gpu), ("RAM", ram)) if v)
+        cards.append(f"<div class='card'><h3><a href='/laptop/{name.split()[0].lower()}'>{name}</a></h3>"
+                     f"<p class='price'>Price: ₹{price:,}</p><ul>{specs}</ul><p class='availability'>{avail}</p></div>")
+    body = "<main><h1>Gaming laptops</h1><section class='grid'>" + "".join(cards) + "</section></main>"
+    return page("Gaming laptops", body)
+
+
 def render_big() -> bytes:
     """A GitHub-sized page (~6k elements) for snapshot performance tests."""
     nav = "".join(f"<a href='/n{i}'>Nav {i}</a> " for i in range(60))
@@ -159,6 +180,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, render_article())
         if path == "/big.html":
             return self._send(200, render_big())
+        if path == "/laptops.html":
+            return self._send(200, render_laptops())
         if path == "/account":
             if self._cookies().get("session") == "demo-session":
                 return self._send(200, page("Account", "<main><h1>Welcome back, demo</h1></main>"))

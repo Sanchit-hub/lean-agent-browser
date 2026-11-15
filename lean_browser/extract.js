@@ -14,6 +14,28 @@
   const wants = h => !fields.length || fields.some(f => String(h || '').toLowerCase().replace(/\[.*?\]/g, '').includes(f));
   const idsIn = el => [...el.querySelectorAll('[data-lab-id]')].map(e => +e.dataset.labId);
   const source = { url: location.href, title: document.title };
+  // Deterministic field lookup inside one item: labelled elements (itemprop / data-field / class), then
+  // "Label: value" lines, then the item's heading for *name*/*title* fields. Never guesses beyond that.
+  const normf = x => String(x || '').toLowerCase().replace(/[_\-]+/g, ' ').replace(/\s+/g, ' ').trim();
+  function fieldValue(item, field) {
+    const fn = normf(field), toks = fn.split(' ').filter(t => t.length > 1);
+    const found = [];
+    for (const el of item.querySelectorAll('[itemprop],[data-field],[class]')) {
+      const tags = normf((el.getAttribute('itemprop') || '') + ' ' + (el.getAttribute('data-field') || '') + ' ' +
+                         (typeof el.className === 'string' ? el.className : ''));
+      const words = tags.split(' ');
+      if (toks.length && toks.every(t => words.includes(t))) { const v = clip(el.innerText, 80); if (v) { found.push(v.replace(/^[^:]{1,30}:\s*/, '')); break; } }
+    }
+    for (const line of (item.innerText || '').split(/\n|·/)) {
+      const m = line.match(/^\s*([^:]{1,40}):\s*(.+?)\s*$/);
+      if (m && toks.some(t => normf(m[1]).split(' ').includes(t))) found.push(clip(m[2], 80));
+    }
+    if (!found.length && /\b(name|title)\b/.test(fn)) {
+      const h = item.querySelector('h1,h2,h3,h4,h5,a'); if (h && (h.innerText || '').trim()) found.push(clip(h.innerText, 80));
+    }
+    const distinct = [...new Set(found.map(v => v.toLowerCase()))];
+    return { value: found.length ? found[0] : null, conflict: distinct.length > 1, values: distinct.length > 1 ? [...new Set(found)] : undefined };
+  }
   const clip = (s, n) => { s = (s || '').replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
   const vis = el => { if (!el.isConnected) return false; const cs = getComputedStyle(el);
     if (cs.display === 'none' || cs.visibility === 'hidden') return false; const r = el.getBoundingClientRect(); return r.width > 0 || r.height > 0; };
@@ -62,9 +84,24 @@
     }
     if (!best) return null;
     const items = [...best.el.children].filter(k => vis(k) && (k.tagName + '.' + (typeof k.className === 'string' ? k.className : '')) === best.sig)
-      .slice(0, 200).map((k, i) => { const o = { text: clip(k.innerText, 200), _item: i + 1 }; const l = links(k); if (l.length) o.links = l; return o; })
-      .filter(o => !fields.length || fields.some(f => o.text.toLowerCase().includes(f)));
-    return { kind: 'list', source, items, total_items: items.length, ...(fields.length ? { note: 'list items filtered to those mentioning a field' } : {}) };
+      .slice(0, 200).map((k, i) => {
+        const o = { text: clip(k.innerText, fields.length ? 120 : 200), _item: i + 1 };
+        const l = links(k); if (l.length) o.links = l;
+        if (fields.length) {  // structured fields per item, with explicit missing/conflicting fields
+          o.fields = {}; const missing = [], conflicts = [];
+          for (const f of opts.fields) {
+            const r = fieldValue(k, String(f));
+            o.fields[f] = r.value;
+            if (r.value == null) missing.push(f);
+            if (r.conflict) conflicts.push({ field: f, values: r.values });
+          }
+          if (missing.length) o.missing = missing;
+          if (conflicts.length) o.conflicts = conflicts;
+          const ids = idsIn(k); if (ids.length) o._ids = ids;
+        }
+        return o;
+      });
+    return { kind: 'list', source, items, total_items: items.length };
   }
   function form() {
     const forms = [...(root.tagName === 'FORM' ? [root] : root.querySelectorAll('form'))].filter(vis);

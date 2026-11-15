@@ -100,3 +100,29 @@ async def test_annotated_screenshot_leaves_no_trace(b, base):
     assert marked[:4] == b"\x89PNG" and marked != plain
     assert not await b.session.cur.page.evaluate("!!document.getElementById('__lab_marks')")
     assert (await b.snapshot()).startswith("unchanged")   # the overlay never shows up in snapshots
+
+
+async def test_context_records_with_provenance_missing_and_budget(b, base):
+    await b.open(base + "/laptops.html")
+    include = ["product_name", "price", "gpu", "ram", "availability"]
+    c = await b.context("compare laptops", include, max_tokens=1200)
+    assert c["total"] == 12 and c["returned"] == 12 and c["omitted"] == 0
+    assert c["goal"] == "compare laptops" and c["source"]["url"].endswith("/laptops.html")
+    first = c["records"][0]
+    assert first["product_name"] == "Aero 14" and first["price"] == "₹92,990" and first["gpu"] == "RTX 4060"
+    assert first["availability"] == "In stock" and first["_ref"]["item"] == 1 and first["_ref"]["ids"]
+    grid = next(r for r in c["records"] if r["product_name"] == "Grid 15")
+    assert grid["gpu"] is None and grid["_missing"] == ["gpu"]          # missing is explicit, never invented
+    small = await b.context("compare laptops", include, max_tokens=200)
+    assert 0 < small["returned"] < 12 and small["omitted"] == 12 - small["returned"] and "expand" in small
+    assert "characters / 4" in small["estimate"]["method"]
+
+
+async def test_extract_list_fields_reports_conflicts(b, base):
+    await b.open(base + "/laptops.html")
+    await b.session.cur.page.evaluate("""() => { const li = document.createElement('li'); li.textContent = 'GPU: RTX 4070';
+        document.querySelector('.card ul').appendChild(li); }""")
+    data = await b.extract("list", fields=["gpu"])
+    first = data["items"][0]
+    assert first["fields"]["gpu"] == "RTX 4060"
+    assert first["conflicts"] == [{"field": "gpu", "values": ["RTX 4060", "RTX 4070"]}]

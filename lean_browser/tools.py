@@ -155,6 +155,54 @@ class LeanBrowser:
                 if v is not None}
         return json.loads(await self._text("extract", args))
 
+    async def context(self, goal: str, include: list[str], max_tokens: int = 1200, within: int | None = None,
+                      new_only: bool = False) -> dict:
+        """Task-aware context, deterministic. The caller states the goal and the fields it needs; the
+        browser returns one record per item/row with those fields, provenance, and explicit missing or
+        conflicting fields, within a token budget. The goal is recorded, never used to drop evidence:
+        anything that doesn't fit is counted in `omitted` and can be fetched with a larger budget or
+        `within=`. Token figures are estimates (characters / 4), not a model tokenizer."""
+        data = await self.extract("auto", within=within, fields=include, new_only=new_only)
+        records = []
+        if data.get("kind") == "table":
+            for r in data.get("rows", []):
+                rec = {k: v for k, v in r.items() if not k.startswith("_")}
+                rec["_ref"] = {"row": r.get("_row"), **({"ids": r["_ids"]} if r.get("_ids") else {})}
+                miss = [f for f in include if not any(f.lower() in k.lower() for k in rec if k != "_ref")]
+                if miss:
+                    rec["_missing"] = miss
+                records.append(rec)
+        elif data.get("kind") == "list":
+            if not any("fields" in it for it in data.get("items", [])):
+                data = await self.extract("list", within=within, fields=include, new_only=new_only)
+            for it in data.get("items", []):
+                rec = dict(it.get("fields") or {})
+                rec["_ref"] = {"item": it.get("_item"), **({"ids": it["_ids"]} if it.get("_ids") else {})}
+                if it.get("missing"):
+                    rec["_missing"] = it["missing"]
+                if it.get("conflicts"):
+                    rec["_conflicts"] = it["conflicts"]
+                records.append(rec)
+        else:
+            raise LeanBrowserError("context() works on a table or a list of items; use extract('form') for forms")
+        out = {"goal": goal, "include": include, "source": data.get("source"), "records": [], "total": len(records)}
+        budget_chars = max_tokens * 4
+        used = len(json.dumps(out, ensure_ascii=False))
+        for rec in records:
+            size = len(json.dumps(rec, ensure_ascii=False)) + 2
+            if used + size > budget_chars:
+                break
+            out["records"].append(rec)
+            used += size
+        out["returned"] = len(out["records"])
+        out["omitted"] = out["total"] - out["returned"]
+        if out["omitted"]:
+            out["expand"] = "call context() again with a larger max_tokens, or scope it with within=<id>"
+        if data.get("already_seen") is not None:
+            out["already_seen"] = data["already_seen"]
+        out["estimate"] = {"tokens": used // 4, "method": "characters / 4 (not a model tokenizer)"}
+        return out
+
     async def screenshot(self, id: int | None = None, annotate: bool = False) -> bytes:
         args = {} if id is None else {"id": id}
         if annotate:

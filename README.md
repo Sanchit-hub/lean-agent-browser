@@ -65,7 +65,9 @@ async with LeanBrowser() as browser:
 ```
 
 More in [`examples/`](examples/): `quickstart.py`, `form_fill.py` (fills a public form in one call and
-checks what the server received), and `structured_extract.py` (a Wikipedia table as JSON, no LLM involved).
+checks what the server received), `structured_extract.py` (a Wikipedia table as JSON, no LLM involved),
+and `task_context.py` (task-aware context: sourced product records with explicit missing fields, and the
+comparison done in your code).
 
 ## How it works
 
