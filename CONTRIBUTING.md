@@ -32,7 +32,7 @@ Thanks for helping. This page covers everything you need to make a change and ge
 
 - **Test on both engines.** Snapshot and session tests already run on Obscura and Chromium. Add your
   case there.
-- **Keep tool schemas small.** `tests/test_tools.py::test_tool_schema_budget` fails if the 6 tool
+- **Keep tool schemas small.** `tests/test_tools.py::test_tool_schema_budget` fails if the 7 tool
   definitions grow past the budget.
 - **Obscura quirks** need a workaround in code plus a line in `SPEC.md` or `spike/FINDINGS.md`.
   Don't work around them silently.

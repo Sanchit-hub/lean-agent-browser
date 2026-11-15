@@ -72,7 +72,7 @@ comparison done in your code).
 ## How it works
 
 ```
-agent ──MCP / CLI / Python──▶  6 tools  ──▶  snapshot · act · diff · settle  ──▶  Obscura (default, ~3× less memory)
+agent ──MCP / CLI / Python──▶  7 tools  ──▶  snapshot · act · diff · settle  ──▶  Obscura (default, ~3× less memory)
                                                                              └─▶  Chromium (file uploads, rich-text
                                                                                   editors, cross-origin iframes, failures)
 ```

@@ -543,7 +543,7 @@ separately because live sites change.
     snapshot.py             render JSON → text, budgets, modes
     diff.py
     session.py              tabs, profiles, dialogs, blocking
-    tools.py                the 6 tool implementations
+    tools.py                the 7 tool implementations
     mcp_server.py
     cli.py
   scripts/compat_check.py
