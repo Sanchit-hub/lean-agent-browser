@@ -2,6 +2,8 @@
 import os
 from pathlib import Path
 
+__version__ = "0.3.0"
+
 
 def _default_browsers_path() -> None:
     """Point Playwright at the Chromium that install.sh downloaded, unless the user chose one."""

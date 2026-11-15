@@ -2,7 +2,15 @@
 .vendor/
 __pycache__/
 *.pyc
-evals/results/
+# Eval results: publish the task-level data (runs, summary, report, meta), not transcripts or traces,
+# which hold full page text.
+evals/results/*
+!evals/results/*/
+evals/results/*/*
+!evals/results/*/runs.jsonl
+!evals/results/*/summary.json
+!evals/results/*/report.md
+!evals/results/*/meta.json
 spike/results/
 .pytest_cache/
 .playwright-mcp/

@@ -48,8 +48,12 @@ Each run writes `evals/results/<timestamp>-claude-cli[-live]/`:
 - `runs.jsonl`: one line per task run (task, mode, success, reason, tokens, turns, time, tool errors). This is the raw, task-level data.
 - `summary.json`: per-mode success, median and p95 tokens and time, and failure categories.
 - `report.md`: the tables.
-- `transcripts/`: full agent transcripts.
-- `traces/`: Lean's own call traces.
+- `transcripts/`: full agent transcripts (kept local, not committed).
+- `traces/`: Lean's own call traces (kept local, not committed).
+
+`runs.jsonl`, `summary.json`, `report.md` and `meta.json` of every run are committed under
+`evals/results/`. Runs that were invalid (for example the 03:14 live run, made while `leanb` was
+uninstalled) are called out in `evals/CHANGELOG.md`.
 
 Only a full run (all fixture tasks, 3+ runs) replaces `evals/report.md`.
 

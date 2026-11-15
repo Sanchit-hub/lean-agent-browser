@@ -1,0 +1,28 @@
+{
+  "run": "20261115-061247-claude-cli-live",
+  "model": "claude-sonnet-5-5 via claude -p",
+  "tasks": [
+    "live-python-designer",
+    "live-halley",
+    "live-obscura-license",
+    "live-example-link",
+    "live-httpbin-form"
+  ],
+  "runs": 1,
+  "modes": {
+    "lean": {
+      "success": 4,
+      "attempts": 5,
+      "median_total_tokens": 8400,
+      "mean_turns": 2.4,
+      "mean_wall_s": 190.84,
+      "failures": [
+        {
+          "task": "live-halley",
+          "run": 1,
+          "reason": "want 1986"
+        }
+      ]
+    }
+  }
+}

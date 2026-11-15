@@ -1,6 +1,6 @@
 [project]
 name = "lean-agent-browser"
-version = "0.1.0"
+version = "0.3.0"
 description = "A token-lean browser for AI agents, built on Obscura with Chromium fallback"
 license = "Apache-2.0"
 readme = "README.md"

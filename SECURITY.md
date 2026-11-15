@@ -18,6 +18,23 @@ impact. Expect a first reply within a week.
   risk; it does not remove it. Agents must still treat page text as data.
 - **Secrets.** Password field values are never shown. Uploads are limited to absolute paths inside
   `allowed_upload_dirs`.
+- **Repeated side effects.** Submits, payments, deletes and sends are never retried automatically, and
+  repeating one after an uncertain or successful outcome needs an explicit `value="repeat"`. `dry_run`
+  previews an action without dispatching it.
+
+## Traces
+
+- **Off by default.** Turn them on with `--trace`, `trace = true` or `LEANB_TRACE=1`.
+- **Local only.** Traces are stored in `~/.lean-browser/traces/` (folder `700`, files `600`) and are
+  never uploaded.
+- **Kept until you delete them.** Use `leanb trace delete latest|all|<run>`.
+- **Redacted by default:**
+  - values typed into password fields, and into fields that look like card numbers, CVVs, one-time
+    codes, PINs, tokens, secrets or ID numbers;
+  - sensitive URL parameters (token, code, key, session, signature, …), which become `REDACTED`.
+- **No page text by default.** A record keeps only the status and header lines. Full page text is
+  stored only with `trace_page_text = true`.
+- **Exports.** `leanb trace export` writes a `600` file and reminds you to review it before sharing.
 
 ## Known limits
 

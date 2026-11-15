@@ -4,8 +4,8 @@
 ![platform](https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)-lightgrey)
 ![license](https://img.shields.io/badge/license-Apache--2.0-blue)
 
-**Lean Agent Browser helps AI agents complete web tasks with less context, fewer tool calls, and actions
-that report what actually changed.**
+**Lean Agent Browser is a reliable execution layer for AI agents on the web: compact context, actions
+that are verified against evidence, and safe recovery when pages change.**
 
 | Same 18 tasks, same agent (Claude Sonnet 5.5) | Success | Median tokens per task | Mean turns | Mean time |
 |---|---|---|---|---|
@@ -29,13 +29,41 @@ header: Home, Search, Orders (+5) [expand:h1]
 14: button "Create account"
 ```
 
-Act on an id, and you get back a verified status plus only what changed:
+Act on an id, and you get back a status backed by evidence, plus only what changed:
 
 ```
 > act fill 10 asha@example.com
 status: verified (value set)
 ~10: textbox "Email"* type=email = "asha@example.com"   (error cleared)
+
+> act click 14
+status: blocked (page shows errors: Password: "Password must be at least 10 characters")
 ```
+
+## Outcomes you can trust
+
+A click being sent is not the same as the task succeeding. Every `act` and `fill_form` returns one of:
+
+| Status | Meaning |
+|---|---|
+| `verified` | Evidence that it worked: the value is set, or after a submit the page navigated without errors, a success message appeared, the form was cleared, or your `expect=` matched |
+| `unverified` | It ran, but nothing shows that it worked (no change, or a submit with no success signal) |
+| `blocked` | The page rejected it (field errors, an error alert, HTTP 4xx/5xx), or Lean refused it (confirmation needed, duplicate) |
+| `ambiguous` | It may or may not have been sent (an error after dispatch); check before doing anything else |
+| `timed_out` | The page was still busy when the wait ended |
+| `done` | Hover, focus, scroll: nothing to verify |
+
+- **`expect=`** states the postcondition: text that must appear, `url:/thanks`, or `gone:<id>`.
+- **Duplicate guard.** Submits, payments, deletes and sends are classed `unsafe`. Lean never retries
+  them, and repeating one on the same page after a `verified`, `ambiguous` or `timed_out` outcome is
+  blocked unless you pass `value="repeat"` (`submit="repeat"` for forms).
+- **Safe recovery.** A re-rendered target is re-found by role, name and fingerprint, only when the
+  match is unambiguous. Fills, selects and checks check the field state first, and retry once only
+  if they didn't stick.
+- **Dry run.** `dry_run=true` returns the resolved target, risk, retry safety and whether confirmation
+  would be needed, as JSON with `"executed": false`. Nothing is dispatched.
+- From Python, `browser.last_outcome` has the same result as a dict (`status`, `evidence`,
+  `retry_safety`, `recovery`), and `LeanBrowserError.category` classifies errors.
 
 ## Quickstart (macOS, Apple Silicon)
 
@@ -45,7 +73,9 @@ git clone https://github.com/Sanchit-hub/lean-agent-browser && cd lean-agent-bro
 .venv/bin/leanb open https://news.ycombinator.com/   # print a snapshot
 ```
 
-Or as a package, without cloning (the repo is private for now, so this needs GitHub access; not on PyPI yet):
+The repository is private for now, so cloning needs GitHub access.
+
+Or as a package, without cloning (same GitHub access needed; not on PyPI yet):
 
 ```bash
 pip install "git+https://github.com/Sanchit-hub/lean-agent-browser"
@@ -87,8 +117,15 @@ agent ──MCP / CLI / Python──▶  7 tools  ──▶  snapshot · act · 
 ## Limitations
 
 - **macOS on Apple Silicon only** for now. The Obscura sandbox uses macOS `sandbox-exec`.
-- The benchmark compares against one baseline (Playwright MCP) on 18 tasks we wrote ourselves. It is a
-  promising result, not proof against every browser agent.
+- **Supported:** macOS 15+ on Apple Silicon (arm64). No Linux or Windows support or claims.
+- The benchmark covers 18 tasks we wrote ourselves (3 runs per tool, agent-browser 1 run), well short of
+  a 100-task suite. It is a promising result, not proof against every browser agent. See
+  [`docs/benchmark.md`](docs/benchmark.md).
+- Verification is heuristic: success and error words are English-only, and a site that shows neither
+  stays `unverified`. Pass `expect=` when it matters.
+- The duplicate guard is per session and per page. It can't see side effects from another session.
+- A dry run reflects the page at that moment; the page can change before you execute.
+- The v0.3.0 release candidate has not yet been tested by outside developers.
 - Obscura 0.2.7 can't upload files, type into rich-text editors, open popups or read cross-origin
   iframes. Those pages run on Chromium automatically.
 
@@ -118,8 +155,8 @@ There are seven tools. Claude counts their definitions at about 1.5k tokens, and
 |---|---|
 | `open(url, mode?, block?)` | Navigate, then return a snapshot. `mode` is `minimal` (interactive elements only), `actions` (default), `read` (markdown) or `full`. |
 | `snapshot(mode?, budget?, expand?, more?, find?, within?)` | Current page. `expand:h1` opens a collapsed group, `more:k1` continues cut-off output, `find` searches everything (including collapsed rows), and `within=<id>` shows only the form, table or section containing that element. |
-| `act(action, id?, value?)` | Actions: `click`, `fill`, `select` (an option label, also works on custom dropdowns), `check`, `uncheck`, `clear`, `press`, `hover`, `focus`, `upload`, `scroll`, `back`, `forward`, `reload`, `wait_for`, `tab` (`list` / `new:URL` / `switch:N` / `close:N`), `dialog` (`accept` / `dismiss` the next native dialog). Returns a status line (`verified` / `unverified` / `timed_out`, with evidence) and a diff. A re-rendered element is re-found once by role and name, and the match must not contradict its fingerprint (link target, test id, field name, form, row text, landmark). If the match is ambiguous or contradicted, nothing is clicked. |
-| `fill_form(fields, submit?)` | `{id: value}` for a whole form in one call. `submit=true` clicks the form's submit button. |
+| `act(action, id?, value?, expect?, dry_run?)` | Actions: `click`, `fill`, `select` (an option label, also works on custom dropdowns), `check`, `uncheck`, `clear`, `press`, `hover`, `focus`, `upload`, `scroll`, `back`, `forward`, `reload`, `wait_for`, `tab` (`list` / `new:URL` / `switch:N` / `close:N`), `dialog` (`accept` / `dismiss` the next native dialog). Returns a status line (see [Outcomes](#outcomes-you-can-trust)) and a diff. A re-rendered element is re-found once by role and name, and the match must not contradict its fingerprint (link target, test id, field name, form, row text, landmark). If the match is ambiguous or contradicted, nothing is clicked. |
+| `fill_form(fields, submit?, expect?, dry_run?)` | `{id: value}` for a whole form in one call. `submit=true` clicks the form's submit button. |
 | `extract(kind?, within?, fields?, new_only?)` | Deterministic JSON for a `table`, `list` or `form` (no LLM involved). Every result carries its source URL, plus row or item numbers and element ids. `fields` picks columns, and `new_only` returns only rows not returned before, which suits pagination and infinite scroll. |
 | `screenshot(id?, annotate?)` | Viewport or element PNG. `annotate=true` draws each snapshot id on its element, so the image maps back to ids the agent can act on. Only for captchas, charts or layout. |
 
@@ -145,6 +182,8 @@ fallback_domains = []               # always use Chromium for these hosts
 allowed_upload_dirs = ["~/Downloads"]
 block = true                        # Chromium: skip images, fonts, media and tracker hosts
 confirm_risky = false               # true: pay/delete/send-like buttons need act(..., value="confirm")
+trace = false                       # JSONL trace of every call in ~/.lean-browser/traces (local only)
+trace_page_text = false             # also keep page text in traces (off: status/header lines only)
 snapshot_timeout_s = 2.0            # slower snapshots move the page to Chromium
 ```
 
@@ -182,7 +221,7 @@ under test is attached, and the system prompt is our own:
 
 ```bash
 .venv/bin/python -m evals.claude_driver --quick      # 6 tasks: Playwright MCP vs lean
-.venv/bin/python -m evals.claude_driver --runs 3     # all 18 tasks x 2 modes x 3 runs
+.venv/bin/python -m evals.claude_driver --runs 3     # all 20 tasks x 2 modes x 3 runs
 ```
 
 **With an API key** (in your environment, or in the gitignored, `chmod 600` file `.env`):
@@ -204,7 +243,7 @@ export ANTHROPIC_API_KEY=...
 ## Development
 
 ```bash
-.venv/bin/python -m pytest -q        # 181 passed, 1 skipped on 2026-11-15 (macOS arm64); local fixture site, both engines
+.venv/bin/python -m pytest -q        # 213 passed, 2 skipped on 2026-11-15 (macOS arm64); local fixture site, both engines
 .venv/bin/python scripts/snap.py login.html,orders.html obscura    # look at snapshots
 ```
 

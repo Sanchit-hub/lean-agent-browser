@@ -1,7 +1,7 @@
 # Project memory: Lean Agent Browser
 
 A living record of what this project is, what has been decided, and what is on this Mac.
-Update it whenever something important changes. Last updated: 2026-11-15 (after the updated-roadmap pass).
+Update it whenever something important changes. Last updated: 2026-11-15 (v0.3.0 Reliability & Trust release).
 
 ## What we're building
 A token-lean browser for AI agents. Pages come back as compact text with numeric ids, and actions
@@ -9,7 +9,8 @@ return a verified status plus only the changes. Obscura (a Rust headless browser
 with Chromium as the fallback. It is exposed as an MCP server, a CLI (`leanb`) and a Python API
 (`from lean_browser import LeanBrowser`).
 
-**Positioning:** fewer tokens, fewer tool calls, verifiable actions, so a lower cost per successful task.
+**Positioning (v0.3):** a reliable execution layer for AI agents on the web: compact context, actions
+verified against evidence, safe recovery. Token efficiency stays an advantage; reliability is the promise.
 
 ## Key results (details in `evals/CHANGELOG.md`)
 - **Fixture suite** (18 tasks, Claude Sonnet 5.5 via `claude -p`):
@@ -34,6 +35,20 @@ with Chromium as the fallback. It is exposed as an MCP server, a CLI (`leanb`) a
 - **`LeanBrowser.context()`** gives task-aware, sourced records with explicit missing and conflicting fields.
 - **`leanb trace replay / export / delete`** were added.
 - **Cross-platform (P0 in the review) was skipped** on purpose: the user chose macOS-only.
+
+## v0.3.0 Reliability & Trust (plan: `~/Downloads/lean_agent_browser_v0.3_reliability_trust_release_plan.md`)
+- **Audit first:** `docs/v0.3-gap-analysis.md` maps every plan item to existing code. The biggest real gap:
+  a rejected login or signup came back `verified (page changed)`.
+- **Statuses:** verified / unverified / blocked / ambiguous / timed_out / done. Page errors win; submit-like
+  actions need a strong signal; `expect=` postconditions; `last_outcome` dict; error categories.
+- **Safety:** retry-safety classes; unsafe actions never retried; duplicate guard (`value="repeat"`);
+  `dry_run` dispatches nothing (tested with an event counter and server state).
+- **Traces:** outcome, recovery, category, step ids; card/OTP/token fields and URL secrets redacted; page
+  text opt-in.
+- **Release validation:** `scripts/smoke_clean_install.sh` (wheel, fresh venv, doctor, MCP) runs in CI.
+- **Not done:** a 100-task benchmark (we have 20 fixture + 5 live tasks; `docs/benchmark.md` says so),
+  Linux (user's macOS-only choice), and testing by outside developers.
+- Tool schemas still fit the 700 proxy-token budget (descriptions were trimmed to make room).
 
 ## Decisions (and why)
 - **macOS (Apple Silicon) only** for now. This was the user's choice.
@@ -83,6 +98,7 @@ cd ~/Desktop/lean && .venv/bin/leanb doctor && .venv/bin/python -m pytest -q
 ```
 
 **Next:**
+- grow the benchmark toward 100 tasks; outside developers test the release candidate
 - automatic choice of when to use a screenshot
 - Stagehand and Browser Use in their own benchmark category (they need their own LLM keys)
 - publish to PyPI and make the repo public, both only when the user decides

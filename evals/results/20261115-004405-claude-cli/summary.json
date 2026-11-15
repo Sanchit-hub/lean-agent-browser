@@ -1,0 +1,43 @@
+{
+  "run": "20261115-004405-claude-cli",
+  "model": "claude-sonnet-5-5 via claude -p",
+  "tasks": [
+    "login",
+    "signup",
+    "wizard",
+    "apply",
+    "booking",
+    "newsletter",
+    "search",
+    "orders",
+    "feed",
+    "spa",
+    "files",
+    "todo",
+    "iframe",
+    "shadow",
+    "newtab",
+    "article",
+    "injection",
+    "editor"
+  ],
+  "runs": 3,
+  "modes": {
+    "playwright-mcp": {
+      "success": 54,
+      "attempts": 54,
+      "median_total_tokens": 48575.5,
+      "mean_turns": 7.48,
+      "mean_wall_s": 18.56,
+      "failures": []
+    },
+    "lean": {
+      "success": 54,
+      "attempts": 54,
+      "median_total_tokens": 11572.0,
+      "mean_turns": 5.09,
+      "mean_wall_s": 11.0,
+      "failures": []
+    }
+  }
+}

@@ -1,5 +1,25 @@
 # Eval changelog
 
+## 2026-11-15 (v0.3.0): reliability tasks
+
+Two new fixture tasks test honest outcomes rather than raw capability:
+
+- `order-once`: place exactly one order. The verifier fails a duplicate order.
+- `honest-failure`: log in with a wrong password and report whether it worked. The verifier fails an
+  agent that claims success.
+
+They ran together with `signup` and `login`: 4 tasks × 3 runs, Claude Sonnet 5.5 via `claude -p`, on
+v0.3 code (evidence-backed statuses and the duplicate guard).
+
+| Mode | Success | Median total tokens | p95 total tokens | Median time |
+|---|---|---|---|---|
+| **Lean** | **12/12** | **9,114** | **17,056** | **9.2 s** |
+| Playwright MCP 0.0.83 | 12/12 | 46,506 | 98,778 | 17.0 s |
+
+No duplicate orders and no false success claims in either mode. This is a small sample (4 tasks), so
+it shows the new behavior works with a real agent. It does not measure reliability in general. Raw data:
+`evals/results/20261115-141019-claude-cli/`.
+
 ## 2026-11-15 (night): live-site suite
 
 Five tasks on real public pages (Wikipedia ×2, a GitHub repo, example.com, httpbin's test form). Success

@@ -1,0 +1,19 @@
+{
+  "run": "20261115-021214-claude-cli",
+  "model": "claude-sonnet-5-5 via claude -p",
+  "tasks": [
+    "login",
+    "booking"
+  ],
+  "runs": 1,
+  "modes": {
+    "agent-browser": {
+      "success": 2,
+      "attempts": 2,
+      "median_total_tokens": 240108.5,
+      "mean_turns": 12,
+      "mean_wall_s": 17.6,
+      "failures": []
+    }
+  }
+}

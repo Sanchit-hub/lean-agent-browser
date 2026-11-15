@@ -1,0 +1,41 @@
+{
+  "run": "20261115-021309-claude-cli",
+  "model": "claude-sonnet-5-5 via claude -p",
+  "tasks": [
+    "login",
+    "signup",
+    "wizard",
+    "apply",
+    "booking",
+    "newsletter",
+    "search",
+    "orders",
+    "feed",
+    "spa",
+    "files",
+    "todo",
+    "iframe",
+    "shadow",
+    "newtab",
+    "article",
+    "injection",
+    "editor"
+  ],
+  "runs": 1,
+  "modes": {
+    "agent-browser": {
+      "success": 17,
+      "attempts": 18,
+      "median_total_tokens": 146314.0,
+      "mean_turns": 8.72,
+      "mean_wall_s": 16.14,
+      "failures": [
+        {
+          "task": "apply",
+          "run": 1,
+          "reason": "no submission"
+        }
+      ]
+    }
+  }
+}

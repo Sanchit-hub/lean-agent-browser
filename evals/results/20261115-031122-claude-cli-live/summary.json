@@ -1,0 +1,41 @@
+{
+  "run": "20261115-031122-claude-cli-live",
+  "model": "claude-sonnet-5-5 via claude -p",
+  "tasks": [
+    "live-python-designer",
+    "live-halley",
+    "live-obscura-license",
+    "live-example-link",
+    "live-httpbin-form"
+  ],
+  "runs": 1,
+  "modes": {
+    "playwright-mcp": {
+      "success": 5,
+      "attempts": 5,
+      "median_total_tokens": 25219,
+      "mean_turns": 4.2,
+      "mean_wall_s": 14.82,
+      "failures": []
+    },
+    "lean": {
+      "success": 3,
+      "attempts": 5,
+      "median_total_tokens": 1285,
+      "mean_turns": 1,
+      "mean_wall_s": 9.46,
+      "failures": [
+        {
+          "task": "live-obscura-license",
+          "run": 1,
+          "reason": "answer missing ['apache']"
+        },
+        {
+          "task": "live-httpbin-form",
+          "run": 1,
+          "reason": "answer missing ['lean tester']"
+        }
+      ]
+    }
+  }
+}

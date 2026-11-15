@@ -383,8 +383,8 @@ prose. The README holds the long documentation.
 |---|---|---|
 | `open` | `open(url, mode="actions", block=True)`; modes: minimal, actions, read, full | snapshot |
 | `snapshot` | `snapshot(mode="actions", budget=None, expand=None, more=None, find=None, within=None)` | snapshot, expanded group, next chunk, or IDs that match `find` |
-| `act` | `act(action, id=None, value=None)` | status line (verified / unverified / timed_out / done) + diff |
-| `fill_form` | `fill_form(fields: {id: value}, submit: id \| bool = False)` | status (`k/n fields set; submitted, …`) + diff, or the new page |
+| `act` | `act(action, id=None, value=None, expect=None, dry_run=False)` | status line (verified / unverified / blocked / ambiguous / timed_out / done) + diff; `dry_run` returns a JSON preview with `executed: false` |
+| `fill_form` | `fill_form(fields: {id: value}, submit: id \| bool \| "repeat" = False, expect=None, dry_run=False)` | status (`k/n fields set; submitted; …`) + diff, or the new page |
 | `extract` | `extract(kind="auto" \| "table" \| "list" \| "form", within=None, fields=None, new_only=False)` | JSON with provenance; list items carry `fields`, `missing`, `conflicts` |
 | `memory` | `memory(action="set" \| "get" \| "list" \| "delete" \| "clear", key=None, value=None)` | session notes with source URL |
 | `screenshot` | `screenshot(id=None, annotate=False)` | PNG (element crop or viewport; annotate draws ids) |
@@ -411,6 +411,38 @@ Rules:
 - `extract` is **deterministic** (DOM heuristics, no LLM call inside the tool). Schema-based LLM
   extraction is out of scope for v2, because those tokens would be hidden from measurement.
 - Errors are short and actionable: `id 14 not found (page changed?) — call snapshot()`.
+
+### Outcomes, recovery and dry-run (v0.3.0)
+
+Dispatch and outcome are separate. `Session._status` decides the status from evidence collected after
+the page settles (`Session._signals`):
+
+1. **Errors first.** New field errors, new `role=alert` text with error words, or HTTP ≥ 400 on a
+   navigation give `blocked`.
+2. **Caller's postcondition.** `expect` (text, `url:<part>`, `gone:<id>`) is polled for up to 3 s. Met
+   means `verified`; not met means `unverified`, or `timed_out` if the page never settled.
+3. **Submit-like actions** (retry safety `unsafe`: risky names, submit buttons, Enter in a form field,
+   `fill_form(submit=…)`) need a strong signal: navigation, a new success message, a cleared form, the
+   target going away, or a new tab. A plain UI change stays `unverified`.
+4. **Other clicks**: any observable change is `verified`.
+5. An exception after an unsafe action may have been dispatched gives `ambiguous`. Unsafe actions are
+   never retried.
+
+Retry safety: `safe` (hover, focus, scroll, wait_for), `conditional` (fills, selects, checks, other
+clicks, navigation), `unsafe` (above). Conditional value actions that fail, or whose target was replaced
+mid-action, check the field state first, then re-identify the target and retry **once**.
+
+Duplicate guard: the key is (URL, action, role, name, form, row text). Repeating an unsafe action within
+10 minutes after a `verified`, `ambiguous` or `timed_out` outcome is blocked unless `value="repeat"`
+(`submit="repeat"`). After `blocked` or `unverified` a retry is allowed.
+
+Dry-run returns before the dialog policy sync and before `_perform`: nothing is dispatched and the
+engine isn't switched. Target resolution may take a fresh snapshot (read-only). Ambiguity raises the
+same `ambiguous:` error as a real action.
+
+`Session.last_outcome` / `LeanBrowser.last_outcome`: `{action, target, executed, status, evidence[],
+retry_safety, risk, recovery[]}`. Error categories (`session.error_category`): blocked, ambiguous,
+stale, not_found, timeout, network, invalid, engine.
 
 ### Sessions and profiles
 

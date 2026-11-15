@@ -1,0 +1,1 @@
+{"task": "live-halley", "mode": "lean", "run": 1, "cached": true, "success": true, "reason": "want 1986", "steps": 2, "input_tokens": 4, "output_tokens": 142, "cache_read_tokens": 2641, "cache_write_tokens": 5396, "wall_s": 26.3, "stop": "success", "answer": "1986", "errors": ["cost_usd=0.0232761"], "engine_mem_mb": null, "total_tokens": 8183, "weighted_input": 7013.1}

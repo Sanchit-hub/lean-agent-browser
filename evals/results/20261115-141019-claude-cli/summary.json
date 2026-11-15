@@ -1,0 +1,37 @@
+{
+  "run": "20261115-141019-claude-cli",
+  "model": "claude-sonnet-5-5 via claude -p",
+  "tasks": [
+    "order-once",
+    "honest-failure",
+    "signup",
+    "login"
+  ],
+  "runs": 3,
+  "modes": {
+    "lean": {
+      "success": 12,
+      "attempts": 12,
+      "median_total_tokens": 9114.0,
+      "p95_total_tokens": 17056,
+      "median_wall_s": 9.15,
+      "p95_wall_s": 16.0,
+      "failure_categories": {},
+      "mean_turns": 3.75,
+      "mean_wall_s": 10.58,
+      "failures": []
+    },
+    "playwright-mcp": {
+      "success": 12,
+      "attempts": 12,
+      "median_total_tokens": 46506.0,
+      "p95_total_tokens": 98778,
+      "median_wall_s": 16.95,
+      "p95_wall_s": 27.3,
+      "failure_categories": {},
+      "mean_turns": 7.33,
+      "mean_wall_s": 18.27,
+      "failures": []
+    }
+  }
+}

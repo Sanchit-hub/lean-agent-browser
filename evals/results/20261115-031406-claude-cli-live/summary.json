@@ -1,0 +1,48 @@
+{
+  "run": "20261115-031406-claude-cli-live",
+  "model": "claude-sonnet-5-5 via claude -p",
+  "tasks": [
+    "live-python-designer",
+    "live-halley",
+    "live-obscura-license",
+    "live-example-link",
+    "live-httpbin-form"
+  ],
+  "runs": 1,
+  "modes": {
+    "lean": {
+      "success": 0,
+      "attempts": 5,
+      "median_total_tokens": 0,
+      "mean_turns": 1,
+      "mean_wall_s": 5.0,
+      "failures": [
+        {
+          "task": "live-python-designer",
+          "run": 1,
+          "reason": "answer missing ['guido van rossum']"
+        },
+        {
+          "task": "live-halley",
+          "run": 1,
+          "reason": "want 1986"
+        },
+        {
+          "task": "live-obscura-license",
+          "run": 1,
+          "reason": "answer missing ['apache']"
+        },
+        {
+          "task": "live-example-link",
+          "run": 1,
+          "reason": "answer missing ['iana']"
+        },
+        {
+          "task": "live-httpbin-form",
+          "run": 1,
+          "reason": "answer missing ['lean tester']"
+        }
+      ]
+    }
+  }
+}

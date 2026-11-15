@@ -1,0 +1,31 @@
+{
+  "run": "20261115-020227-claude-cli",
+  "model": "claude-sonnet-5-5 via claude -p",
+  "tasks": [
+    "login",
+    "apply",
+    "booking",
+    "spa",
+    "orders",
+    "injection"
+  ],
+  "runs": 1,
+  "modes": {
+    "playwright-mcp": {
+      "success": 6,
+      "attempts": 6,
+      "median_total_tokens": 53784.5,
+      "mean_turns": 8,
+      "mean_wall_s": 20.05,
+      "failures": []
+    },
+    "lean": {
+      "success": 6,
+      "attempts": 6,
+      "median_total_tokens": 14627.5,
+      "mean_turns": 5.5,
+      "mean_wall_s": 11.6,
+      "failures": []
+    }
+  }
+}
