@@ -73,6 +73,22 @@ def _host_matches(host: str, domains) -> bool:
     return any(host == d or host.endswith("." + d) for d in domains)
 
 
+async def _bounded(coro, seconds: float):
+    """Await with a timeout, swallowing errors (used for cleanup that must not hang). Unlike wait_for,
+    this does not wait for a cancelled call to finish: Playwright calls against a hung engine can
+    ignore cancellation, and waiting for them would hang shutdown anyway."""
+    task = asyncio.ensure_future(coro)
+    done, _ = await asyncio.wait({task}, timeout=seconds)
+    if not done:
+        task.cancel()
+        task.add_done_callback(lambda t: t.cancelled() or t.exception())  # silence "never retrieved"
+        return None
+    try:
+        return task.result()
+    except Exception:
+        return None
+
+
 class EngineError(RuntimeError):
     pass
 
@@ -184,13 +200,18 @@ class ObscuraProcess:
         prof = Path(self.tmp) / "sandbox.sb"
         prof.write_text(sandbox_profile(self.tmp, str(self.binary.parent.resolve()), self.localhost_only))
         ready = Path(self.tmp) / "ready"
-        args = ["/usr/bin/sandbox-exec", "-f", str(prof), str(self.binary), "serve",
+        # A tiny sh supervisor inside the sandbox kills Obscura when the Python process that started it
+        # goes away (even after SIGKILL), so a crashed or killed client never leaves an orphaned engine.
+        watchdog = ('"$@" & c=$!; trap \'kill $c 2>/dev/null; exit 0\' TERM INT HUP; '
+                    'while kill -0 "$P" 2>/dev/null && kill -0 $c 2>/dev/null; do sleep 1; done; kill $c 2>/dev/null; wait $c')
+        args = ["/usr/bin/sandbox-exec", "-f", str(prof), "/bin/sh", "-c", watchdog, "sh", str(self.binary), "serve",
                 "--host", "127.0.0.1", "--port", str(self.port), "--ready-file", str(ready), "--quiet"]
         if self.allow_private_network:
             args.append("--allow-private-network")
         if self.stealth:
             args.append("--stealth")
-        env = {"PATH": "/usr/bin:/bin", "HOME": self.tmp, "TMPDIR": self.tmp, "OBSCURA_CDP_TOKEN": self.token}
+        env = {"PATH": "/usr/bin:/bin", "HOME": self.tmp, "TMPDIR": self.tmp, "OBSCURA_CDP_TOKEN": self.token,
+               "P": str(os.getpid())}
         self.proc = subprocess.Popen(args, env=env, cwd=self.tmp, stdin=subprocess.DEVNULL,
                                      stdout=open(Path(self.tmp) / "obscura.log", "w"), stderr=subprocess.STDOUT)
         t0 = time.time()
@@ -274,22 +295,24 @@ class BrowserManager:
         self._pw = await async_playwright().start()
 
     async def close(self):
-        for c in (self._obscura_ctx, self._chromium_ctx):
-            try:
-                if c:
-                    await c.close()
-            except Exception:
-                pass
-        for b in (self._obscura_browser, self._chromium):
-            try:
-                if b:
-                    await b.close()
-            except Exception:
-                pass
+        # Every close is time-boxed: a page stuck in a script must never hang shutdown.
+        for c in (self._obscura_ctx, self._chromium_ctx, self._obscura_browser, self._chromium):
+            if c:
+                await _bounded(c.close(), 5)
         if self._obscura:
             self._obscura.stop()
         if self._pw:
-            await self._pw.stop()
+            await _bounded(self._pw.stop(), 10)
+
+    async def reset_obscura(self, reason: str):
+        """Throw away a hung Obscura process (its script thread is stuck); the next page starts a fresh one."""
+        self._note(f"restarting obscura: {reason}")
+        for c in (self._obscura_ctx, self._obscura_browser):
+            if c:
+                await _bounded(c.close(), 2)
+        if self._obscura:
+            self._obscura.stop()
+        self._obscura = self._obscura_browser = self._obscura_ctx = None
 
     # ---------- engines ----------
     def _note(self, msg: str):
@@ -384,11 +407,11 @@ class BrowserManager:
                 return await self._open_chromium(url, reason=f"navigation failed on obscura: {type(e).__name__}",
                                                  carry_from=ctx, host=host)
             try:
-                needs = await page.evaluate(ROUTING_PROBE)
+                needs = await asyncio.wait_for(page.evaluate(ROUTING_PROBE), 5)
             except Exception as e:
                 needs = [f"probe failed: {type(e).__name__}"]
             if needs:
-                await page.close()
+                await _bounded(page.close(), 3)
                 return await self._open_chromium(url, reason="routed: " + ", ".join(needs), carry_from=ctx, host=host)
             return Tab(page, "obscura", reason)
         return await self._open_chromium(url, reason=reason, carry_from=self._obscura_ctx)
@@ -425,12 +448,12 @@ class BrowserManager:
                 return await self._open_chromium(url, reason=f"navigation failed on obscura: {type(e).__name__}",
                                                  carry_from=ctx, host=host)
             try:
-                needs = await tab.page.evaluate(ROUTING_PROBE)
+                needs = await asyncio.wait_for(tab.page.evaluate(ROUTING_PROBE), 5)
             except Exception as e:
                 needs = [f"probe failed: {type(e).__name__}"]
             if needs:
                 ctx = tab.page.context
-                await tab.page.close()
+                await _bounded(tab.page.close(), 3)
                 return await self._open_chromium(url, reason="routed: " + ", ".join(needs), carry_from=ctx, host=host)
             return Tab(tab.page, "obscura", "")
         # engine changes: a new page in the other engine (history does not carry over)
@@ -449,10 +472,21 @@ class BrowserManager:
             return tab
         url = tab.page.url
         src = tab.page.context
-        await tab.page.close()
+        # Cookies first (the context may be wedged afterwards), then drop the page; a hung engine is reset.
+        carry = None
+        try:
+            carry = await asyncio.wait_for(src.storage_state(), 3)
+        except Exception:
+            pass
+        await _bounded(tab.page.close(), 3)
+        if "unresponsive" in reason or "too slow" in reason:
+            await self.reset_obscura(reason)
         host = urlparse(url).hostname or ""
         self.domain_engine[host] = ("chromium", reason)
-        return await self._open_chromium(url, reason=reason, carry_from=src)
+        ctx = await self._chromium_context()
+        if carry and carry.get("cookies"):
+            await _bounded(ctx.add_cookies(carry["cookies"]), 3)
+        return await self._open_chromium(url, reason=reason, carry_from=None)
 
     def obscura_rss_mb(self) -> float | None:
         if not (self._obscura and self._obscura.proc):

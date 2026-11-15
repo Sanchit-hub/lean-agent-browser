@@ -28,8 +28,8 @@ def test_obscura_binds_localhost_with_token_and_sandbox():
     p.start()
     try:
         import subprocess
-        out = subprocess.run(["lsof", "-nP", "-a", "-p", str(p.proc.pid), "-iTCP", "-sTCP:LISTEN"],
-                             capture_output=True, text=True).stdout
+        # p.proc is the sandboxed sh watchdog; look up whoever listens on the port instead.
+        out = subprocess.run(["lsof", "-nP", f"-iTCP:{p.port}", "-sTCP:LISTEN"], capture_output=True, text=True).stdout
         assert f"127.0.0.1:{p.port}" in out and "*:" not in out, out
         # no token -> refused
         import urllib.error
@@ -170,3 +170,54 @@ def test_install_script_syntax():
     text = (root / "install.sh").read_text()
     assert eng.OBSCURA_VERSION in text and "19faa248ac762f466ddb822dbb03ed4f097312d10d1a4d5b2143e6040a9bebd0" in text
     assert "--ignore-scripts" in text
+
+
+@needs_obscura
+def test_obscura_dies_with_its_client(tmp_path):
+    """Kill -9 the Python process that started Obscura: the sandboxed watchdog must stop Obscura too."""
+    import os
+    import signal
+    import subprocess
+    import sys
+    import time
+    code = ("import time; from lean_browser.engine import ObscuraProcess, find_obscura; "
+            "p = ObscuraProcess(find_obscura()); p.start(); print(p.proc.pid, flush=True); time.sleep(60)")
+    child = subprocess.Popen([sys.executable, "-c", code], stdout=subprocess.PIPE, text=True)
+    sh_pid = int(child.stdout.readline())
+    obscura = [int(l.split()[0]) for l in subprocess.run(["ps", "-axo", "pid=,ppid="], capture_output=True, text=True)
+               .stdout.splitlines() if l.split()[1] == str(sh_pid)]
+    assert obscura, "obscura not started under the watchdog"
+    os.kill(child.pid, signal.SIGKILL)
+    child.wait()
+    deadline = time.time() + 6
+    while time.time() < deadline:
+        try:
+            os.kill(obscura[0], 0)
+        except ProcessLookupError:
+            return
+        time.sleep(0.2)
+    os.kill(obscura[0], signal.SIGKILL)
+    pytest.fail("obscura outlived its client")
+
+
+async def test_unresponsive_page_moves_to_chromium(base, monkeypatch):
+    """Simulate a page whose script thread is stuck: settle raises, and the tab moves to Chromium."""
+    from lean_browser import settle as settle_mod
+    from lean_browser.session import Session
+    from lean_browser.settle import SETTLE_INIT_JS
+    calls = {"n": 0}
+    real = settle_mod.settle
+
+    async def flaky(page, *a, **kw):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise settle_mod.PageUnresponsive("stuck")
+        return await real(page, *a, **kw)
+    import lean_browser.session as sess_mod
+    monkeypatch.setattr(sess_mod, "settle", flaky)
+    async with BrowserManager(allow_private_network=True, init_scripts=[SETTLE_INIT_JS]) as bm:
+        s = Session(bm)
+        out = await s.open(base + "/login.html")
+        if find_obscura():
+            assert "engine: chromium (page unresponsive on obscura)" in out
+        assert 'textbox "Username"' in out

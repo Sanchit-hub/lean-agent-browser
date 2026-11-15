@@ -25,7 +25,7 @@ from playwright.async_api import ElementHandle, Page
 
 from lean_browser.diff import diff
 from lean_browser.engine import BrowserManager, Tab
-from lean_browser.settle import settle
+from lean_browser.settle import PageUnresponsive, settle
 from lean_browser.snapshot import Snapshot, Snapshotter, SnapshotTimeout
 
 EXTRACT_JS = (Path(__file__).parent / "extract.js").read_text()
@@ -269,9 +269,25 @@ class Session:
                     self._wire(ts)
         finally:
             self._opening = False
-        await settle(ts.page, cap_s=self.settle_cap_s)
+        await self._settle(ts)
         snap = await self._take(ts, mode)
         return self._render_full(ts, snap)
+
+    async def _settle(self, ts: TabState, cap_s: float | None = None) -> bool:
+        """settle(), but a page whose script thread has hung (seen on Obscura) moves to Chromium."""
+        try:
+            return await settle(ts.page, cap_s=cap_s or self.settle_cap_s)
+        except PageUnresponsive:
+            if ts.tab.engine != "obscura":
+                raise ActionError("the page stopped responding to scripts")
+            self._opening = True
+            try:
+                ts.tab = await self.bm.switch_to_chromium(ts.tab, "page unresponsive on obscura")
+            finally:
+                self._opening = False
+            ts.snapper = Snapshotter(timeout_s=max(self.snapshot_timeout_s, 10))
+            self._wire(ts)
+            return await settle(ts.page, cap_s=cap_s or self.settle_cap_s)
 
     # ---------- snapshots ----------
     async def _take(self, ts: TabState, mode: str = "actions") -> Snapshot:
@@ -287,7 +303,7 @@ class Session:
                 self._opening = False
             ts.snapper = Snapshotter(timeout_s=max(self.snapshot_timeout_s, 10))
             self._wire(ts)
-            await settle(ts.page, cap_s=self.settle_cap_s)
+            await self._settle(ts)
             return await ts.snapper.take(ts.page, mode=mode, engine=ts.tab.header)
 
     def _render_full(self, ts: TabState, snap: Snapshot, budget: int | None = None) -> str:
@@ -470,7 +486,7 @@ class Session:
                 await fn(timeout=self.bm.nav_timeout_ms)
             except Exception as e:
                 raise ActionError(_short(e)) from e
-            await settle(ts.page, cap_s=self.settle_cap_s)
+            await self._settle(ts)
             return self._render_full(ts, await self._take(ts))
         if action == "wait_for":
             return await self._wait_for(str(value or ""))
@@ -575,10 +591,10 @@ class Session:
     async def _after(self, ts: TabState, before: Snapshot, tabs_before: int, prefix: str = "",
                      expect: dict | None = None) -> str:
         await asyncio.sleep(0.05)
-        settled = await settle(ts.page, cap_s=self.settle_cap_s)
+        settled = await self._settle(ts)
         if len(self.tabs) > tabs_before:
             nts = self.cur
-            await settle(nts.page, cap_s=self.settle_cap_s)
+            await self._settle(nts)
             note = self._drain(ts)
             status = "status: verified (new tab opened)\n" if expect else ""
             return status + prefix + (note + "\n" if note else "") + self._render_full(nts, await self._take(nts))
@@ -596,7 +612,7 @@ class Session:
             for _ in range(15):
                 if len(self.tabs) > tabs_before:
                     nts = self.cur
-                    await settle(nts.page, cap_s=self.settle_cap_s)
+                    await self._settle(nts)
                     note = self._drain(ts)
                     return ("status: verified (new tab opened)\n" + prefix + (note + "\n" if note else "")
                             + self._render_full(nts, await self._take(nts)))

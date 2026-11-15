@@ -48,13 +48,24 @@ PROBE_JS = """() => {
 }"""
 
 
+class PageUnresponsive(Exception):
+    """The page no longer answers evaluate() calls; the caller should move it to another engine."""
+
+
 async def settle(page: Page, quiet_ms: int = 300, cap_s: float = 5.0) -> bool:
     """Return True if the page went quiet, False if the cap was hit (caller says 'still loading')."""
     deadline = time.monotonic() + cap_s
     installed = False
+    timeouts = 0
     while time.monotonic() < deadline:
         try:
-            st = await page.evaluate(PROBE_JS)
+            st = await asyncio.wait_for(page.evaluate(PROBE_JS), 2)
+            timeouts = 0
+        except asyncio.TimeoutError:
+            timeouts += 1
+            if timeouts >= 2:  # the page's script thread is stuck (seen on Obscura with some sites)
+                raise PageUnresponsive("page stopped responding to scripts")
+            continue
         except Exception:
             # execution context destroyed: a navigation is in progress
             try:
