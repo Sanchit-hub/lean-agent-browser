@@ -5,7 +5,7 @@
 #   3. leanb install (pinned Obscura + Chromium; skips pieces already verified in ~/.lean-browser),
 #   4. leanb doctor,
 #   5. the documented MCP client config: start `leanb mcp`, list tools, open a local page, act on it.
-# macOS arm64 only.
+# macOS arm64 and Linux (x86_64, arm64).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PY="$("${PYTHON:-python3}" -c "import sys; print(sys.executable)")"
@@ -33,6 +33,7 @@ PORT=$("$PY" -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); prin
 SRV=$!
 for _ in $(seq 1 60); do curl -fs "http://127.0.0.1:$PORT/api/state" >/dev/null && break; sleep 0.5; done
 curl -fs "http://127.0.0.1:$PORT/api/state" >/dev/null || { echo "fixture server did not start"; exit 1; }
+curl -fs "http://127.0.0.1:$PORT/b/faq.html" >/dev/null || { echo "fixture server cannot serve benchmark pages"; exit 1; }
 "$WORK/venv/bin/python" -I - "$WORK/venv/bin/leanb" "http://127.0.0.1:$PORT" <<'PYEOF'
 import asyncio, re, sys
 from mcp import ClientSession

@@ -159,7 +159,8 @@ TARGET_STATE_JS = r"""el => {
     checked: typeof el.checked === 'boolean' ? el.checked : null,
     selected: el.tagName === 'SELECT' && el.selectedIndex >= 0 ? el.options[el.selectedIndex].text.trim() : null,
     text: el.isContentEditable ? (el.innerText || '').trim() : (el.getAttribute('role') === 'combobox' ? (el.innerText || '').trim() : null),
-    radio: radio(), files: el.files ? el.files.length : null };
+    radio: radio(), files: el.files ? el.files.length : null,
+    slider: el.getAttribute('role') === 'slider' ? el.getAttribute('aria-valuenow') : (el.type === 'range' ? el.value : null) };
 }"""
 
 _norm = lambda x: " ".join(str(x or "").split()).lower()
@@ -475,6 +476,8 @@ class Session:
         role = (entry or {}).get("role")
         if action == "click":
             await self._click(ts, el)
+        elif role == "slider" and action in ("fill", "select"):
+            await self._slide(ts, el, value)
         elif action in ("fill", "clear"):
             v = "" if action == "clear" else str(value if value is not None else "")
             if eng == "chromium":
@@ -735,6 +738,38 @@ class Session:
                               f"({', '.join(f'{k}={old_fp[k]!r}' for k in keys)}) — call snapshot()")
         raise ActionError(f'id {el_id} is gone: {role} "{nm}" is no longer on the page — call snapshot()')
 
+    async def _slide(self, ts: TabState, el, value):
+        """Set a slider: a native range input gets its value plus input/change events; an ARIA slider is
+        moved with the arrow keys (as a person would) until it reports the wanted value."""
+        try:
+            want = float(str(value).strip().rstrip("%"))
+        except ValueError:
+            raise ActionError("a slider value must be a number") from None
+        native = await el.evaluate("e => e.tagName === 'INPUT'")
+        if native:
+            got = await el.evaluate("""(e, v) => { e.focus(); e.value = String(v);
+                e.dispatchEvent(new Event('input', {bubbles: true})); e.dispatchEvent(new Event('change', {bubbles: true}));
+                return +e.value; }""", want)
+            if got != want:
+                raise ActionError(f"slider took {got:g}, not {want:g} (outside its range or step?)")
+            return
+        read = "e => { const v = e.getAttribute('aria-valuenow'); return v === null || v === '' ? null : +v; }"
+        await (el.focus() if ts.tab.engine == "chromium" else self._dom(el, "focus"))
+        cur = await el.evaluate(read)
+        if cur is None:
+            raise ActionError("the slider reports no current value (aria-valuenow)")
+        for _ in range(200):
+            if cur == want:
+                return
+            await ts.page.keyboard.press("ArrowRight" if cur < want else "ArrowLeft")
+            nxt = await el.evaluate(read)
+            if nxt is None or nxt == cur or (nxt > want) != (cur > want) and nxt != want:
+                cur = nxt if nxt is not None else cur
+                break
+            cur = nxt
+        if cur != want:
+            raise ActionError(f"slider stopped at {cur:g}, not {want:g} (its step may not land on that value)")
+
     async def _target_state(self, ts: TabState, el_id) -> dict | None:
         try:
             el = (await ts.page.evaluate_handle(RESOLVE_JS, int(el_id))).as_element()
@@ -747,6 +782,13 @@ class Session:
         role = (entry or {}).get("role")
         if st is None:
             return False, "element disappeared after the action"
+        if role == "slider" and action in ("fill", "select"):
+            got = st.get("slider")
+            try:
+                ok = got is not None and float(got) == float(str(value).strip().rstrip("%"))
+            except ValueError:
+                ok = False
+            return (True, f"slider at {got}") if ok else (False, f"slider is at {got}, expected {value}")
         if action in ("fill", "clear"):
             want = "" if action == "clear" else str(value if value is not None else "")
             got = st["value"] if st["value"] is not None else (st["text"] or "")

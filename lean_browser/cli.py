@@ -104,9 +104,14 @@ async def cmd_doctor(a) -> int:
     from lean_browser.engine import BrowserManager, EngineError, ObscuraProcess, find_obscura, verify_obscura
     ok = True
     page = "data:text/html,<title>ok</title><main><button>Ping</button></main>"
+    from lean_browser.engine import OBSCURA_SHA256, PLATFORM, sandbox_tool
     b = find_obscura()
-    if not b:
-        print("obscura:  not installed (Chromium will serve every page) — run ./install.sh")
+    if not OBSCURA_SHA256:
+        print(f"obscura:  no pinned build for this platform ({PLATFORM or 'unsupported'}); Chromium serves every page")
+    elif not sandbox_tool():
+        print("obscura:  disabled: no sandbox found (install bubblewrap: apt install bubblewrap); Chromium serves every page")
+    elif not b:
+        print("obscura:  not installed (Chromium will serve every page) — run leanb install")
     else:
         try:
             verify_obscura(b)

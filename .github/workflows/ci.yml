@@ -1,6 +1,6 @@
 name: CI
 
-# macOS (Apple Silicon) only: that is the supported platform for now.
+# Supported platforms: macOS (Apple Silicon) and Linux (x86_64, arm64).
 on:
   push:
     branches: [main]
@@ -34,3 +34,36 @@ jobs:
         run: .venv/bin/python -m pytest -q -rs -s -k 'not big_page' && .venv/bin/python -m pytest -q -s -k big_page
       - name: Clean-install smoke test (wheel into a fresh venv, doctor, MCP round trip)
         run: PYTHON=python3 ./scripts/smoke_clean_install.sh
+
+  linux:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: bubblewrap (sandbox for Obscura)
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q bubblewrap
+          # Ubuntu 24.04 restricts unprivileged user namespaces through AppArmor; bubblewrap needs them.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: Cache Obscura and Chromium
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
+        with:
+          path: ~/.lean-browser
+          key: lean-browser-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('install.sh', 'pyproject.toml', 'lean_browser/engine.py') }}
+      - name: Install (pinned + checksummed Obscura, Chromium, self-check)
+        run: |
+          PYTHON=python3 ./install.sh || true   # doctor may fail before Chromium's system libraries are present
+          sudo .venv/bin/python -m playwright install-deps chromium
+          .venv/bin/leanb doctor
+      - name: Tests
+        run: .venv/bin/python -m pytest -q -rs -s -k 'not big_page' && .venv/bin/python -m pytest -q -s -k big_page
+      - name: Clean-install smoke test (wheel into a fresh venv, doctor, MCP round trip)
+        run: PYTHON=python3 ./scripts/smoke_clean_install.sh
+

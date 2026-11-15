@@ -70,8 +70,12 @@ def el_line(e: dict) -> str:
     if "val" in e:
         quote = role in ("textbox", "combobox") and e.get("type") != "password"
         s += f" = {_q(e['val']) if quote else e['val']}"
+    if e.get("range"):
+        s += f" ({e['range']})"
     if "expanded" in e:
-        s += " [open]" if e["expanded"] else ""
+        s += " [open]" if e["expanded"] else ("" if e.get("custom") else " [closed]")
+    if e.get("pressed"):
+        s += " (pressed)"
     if e.get("selected"):
         s += " (selected)"
     if e.get("readonly"):
@@ -80,6 +84,10 @@ def el_line(e: dict) -> str:
         s += " disabled"
     if e.get("err"):
         s += f" !{_q(e['err'])}"
+    if e.get("where"):
+        s += f" (in {_q(e['where'])})"
+    if e.get("shows"):
+        s += f" -> {_q(e['shows'])}"
     if e.get("frame"):
         s = f"[frame:{e['frame']}] " + s
     return s

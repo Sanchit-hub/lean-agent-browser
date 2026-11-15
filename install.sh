@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-command install for Lean Agent Browser (macOS arm64).
+# One-command install for Lean Agent Browser (macOS arm64; Linux x86_64 and arm64).
 #
 #   ./install.sh              core: Python env, pinned + checksummed Obscura, Chromium, self-check
 #   ./install.sh --with-eval  also installs the pinned Playwright MCP and agent-browser baselines (Node.js >= 20)
@@ -7,15 +7,11 @@
 # Safe to re-run. Nothing is installed outside this folder and ~/.lean-browser/.
 set -euo pipefail
 
-OBSCURA_VERSION="0.2.7"
-OBSCURA_TARBALL="obscura-aarch64-macos.tar.gz"
-OBSCURA_SHA256="fc7e73f23058f18d6d5be983d83b24ba374d12167677657a307a9476c0f5a7c1"
 PLAYWRIGHT_MCP_VERSION="0.0.83"
 AGENT_BROWSER_VERSION="0.41.0"
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 HOME_DIR="$HOME/.lean-browser"
-BIN_DIR="$HOME_DIR/bin"
 export PLAYWRIGHT_BROWSERS_PATH="$HOME_DIR/pw-browsers"
 
 say()  { printf '\033[1m==> %s\033[0m\n' "$*"; }
@@ -31,9 +27,14 @@ for a in "$@"; do
 done
 
 # ---------- platform ----------
-[[ "$(uname -s)" == "Darwin" ]] || fail "only macOS is supported by this installer"
+OS="$(uname -s)"
 ARCH="$(uname -m)"
-[[ -x /usr/bin/sandbox-exec ]] || fail "/usr/bin/sandbox-exec missing (needed to sandbox Obscura)"
+case "$OS" in
+  Darwin) [[ -x /usr/bin/sandbox-exec ]] || fail "/usr/bin/sandbox-exec missing (needed to sandbox Obscura)" ;;
+  Linux)  command -v bwrap >/dev/null || say "Note: bubblewrap (bwrap) not found. Obscura only runs sandboxed, so until you
+     install it (sudo apt install bubblewrap) Chromium will serve every page." ;;
+  *) fail "unsupported OS $OS (macOS and Linux are supported)" ;;
+esac
 
 # ---------- python ----------
 PY="${PYTHON:-python3}"
@@ -45,36 +46,10 @@ say "Python environment (.venv, pinned dependencies)"
 "$HERE/.venv/bin/pip" install -q --upgrade pip >/dev/null
 "$HERE/.venv/bin/pip" install -q -e "$HERE[dev]"
 
-# ---------- obscura ----------
-mkdir -p "$BIN_DIR"
-chmod 700 "$HOME_DIR"
-if [[ "$ARCH" != "arm64" ]]; then
-  say "Skipping Obscura: only the arm64 release is pinned (Chromium will be used for every page)"
-elif "$HERE/.venv/bin/python" -c "from lean_browser.engine import verify_obscura; from pathlib import Path; verify_obscura(Path('$BIN_DIR/obscura'))" 2>/dev/null; then
-  say "Obscura $OBSCURA_VERSION already installed and verified"
-else
-  say "Downloading Obscura $OBSCURA_VERSION"
-  TMP="$(mktemp -d)"
-  trap 'rm -rf "$TMP"' EXIT
-  curl -fsSL --retry 3 -o "$TMP/$OBSCURA_TARBALL" \
-    "https://github.com/h4ckf0r0day/obscura/releases/download/v$OBSCURA_VERSION/$OBSCURA_TARBALL"
-  GOT="$(shasum -a 256 "$TMP/$OBSCURA_TARBALL" | cut -d' ' -f1)"
-  [[ "$GOT" == "$OBSCURA_SHA256" ]] || fail "Obscura checksum mismatch: got $GOT, want $OBSCURA_SHA256"
-  say "Checksum OK"
-  mkdir -p "$TMP/x"
-  tar -xzf "$TMP/$OBSCURA_TARBALL" -C "$TMP/x"
-  for f in obscura obscura-worker; do
-    [[ -f "$TMP/x/$f" ]] || fail "$f missing from the release archive"
-    install -m 755 "$TMP/x/$f" "$BIN_DIR/$f"
-    xattr -d com.apple.quarantine "$BIN_DIR/$f" 2>/dev/null || true
-  done
-  "$HERE/.venv/bin/python" -c "from lean_browser.engine import verify_obscura; from pathlib import Path; verify_obscura(Path('$BIN_DIR/obscura'))" \
-    || fail "extracted Obscura binaries do not match the pinned hashes"
-fi
-
-# ---------- chromium ----------
-say "Chromium for the fallback engine (into $PLAYWRIGHT_BROWSERS_PATH)"
-"$HERE/.venv/bin/python" -m playwright install chromium
+# ---------- engines ----------
+# Pinned + checksummed Obscura for this platform, then Playwright's Chromium (lean_browser/installer.py;
+# the pinned hashes live in lean_browser/engine.py, one place for install.sh, leanb install and every launch).
+"$HERE/.venv/bin/leanb" install
 
 # ---------- eval baseline ----------
 if [[ "$WITH_EVAL" == 1 ]]; then
@@ -88,7 +63,7 @@ if [[ "$WITH_EVAL" == 1 ]]; then
   mkdir -p "$HERE/.vendor/agent-browser"
   (cd "$HERE/.vendor/agent-browser" && npm install --prefix . "agent-browser@$AGENT_BROWSER_VERSION" \
      --save-exact --ignore-scripts --no-audit --no-fund >/dev/null)
-  chmod +x "$HERE/.vendor/agent-browser/node_modules/agent-browser/bin/agent-browser-darwin-arm64"
+  chmod +x "$HERE"/.vendor/agent-browser/node_modules/agent-browser/bin/agent-browser-* 2>/dev/null || true
 fi
 
 # ---------- self-check ----------

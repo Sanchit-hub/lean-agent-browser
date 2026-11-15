@@ -290,6 +290,7 @@ def serve(port: int) -> ThreadingHTTPServer:
 
 
 if __name__ == "__main__":
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # run as a script: make `evals.bench` importable
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8765
     print(f"fixtures on http://127.0.0.1:{port}", flush=True)
     make_server(port).serve_forever()

@@ -28,9 +28,13 @@ def test_obscura_binds_localhost_with_token_and_sandbox():
     p.start()
     try:
         import subprocess
-        # p.proc is the sandboxed sh watchdog; look up whoever listens on the port instead.
-        out = subprocess.run(["lsof", "-nP", f"-iTCP:{p.port}", "-sTCP:LISTEN"], capture_output=True, text=True).stdout
-        assert f"127.0.0.1:{p.port}" in out and "*:" not in out, out
+        # p.proc is the sandbox wrapper; look up whoever listens on the port instead.
+        if eng.IS_MAC:
+            out = subprocess.run(["lsof", "-nP", f"-iTCP:{p.port}", "-sTCP:LISTEN"], capture_output=True, text=True).stdout
+            assert f"127.0.0.1:{p.port}" in out and "*:" not in out, out
+        else:
+            out = subprocess.run(["ss", "-ltnH", f"sport = :{p.port}"], capture_output=True, text=True).stdout
+            assert f"127.0.0.1:{p.port}" in out and "0.0.0.0:" not in out and "*:" not in out, out
         # no token -> refused
         import urllib.error
         import urllib.request
@@ -168,8 +172,12 @@ def test_install_script_syntax():
     root = Path(__file__).resolve().parent.parent
     assert subprocess.run(["bash", "-n", str(root / "install.sh")]).returncode == 0
     text = (root / "install.sh").read_text()
-    assert eng.DEFAULT_OBSCURA_VERSION in text and eng.OBSCURA_RELEASE_SHA256[eng.DEFAULT_OBSCURA_VERSION] in text
+    assert "leanb\" install" in text  # Obscura download and hash checks live in one place: lean_browser/installer.py
     assert "--ignore-scripts" in text
+    # every supported platform has a pinned archive digest and pinned binary hashes for the default version
+    for plat in ("aarch64-macos", "x86_64-linux", "aarch64-linux"):
+        assert len(eng.OBSCURA_RELEASE_SHA256[eng.DEFAULT_OBSCURA_VERSION][plat]) == 64
+        assert set(eng.OBSCURA_HASHES[eng.DEFAULT_OBSCURA_VERSION][plat]) == {"obscura", "obscura-worker"}
 
 
 @needs_obscura
@@ -181,12 +189,13 @@ def test_obscura_dies_with_its_client(tmp_path):
     import sys
     import time
     code = ("import time; from lean_browser.engine import ObscuraProcess, find_obscura; "
-            "p = ObscuraProcess(find_obscura()); p.start(); print(p.proc.pid, flush=True); time.sleep(60)")
+            "p = ObscuraProcess(find_obscura()); p.start(); print(p.port, flush=True); time.sleep(60)")
     child = subprocess.Popen([sys.executable, "-c", code], stdout=subprocess.PIPE, text=True)
-    sh_pid = int(child.stdout.readline())
-    obscura = [int(l.split()[0]) for l in subprocess.run(["ps", "-axo", "pid=,ppid="], capture_output=True, text=True)
-               .stdout.splitlines() if l.split()[1] == str(sh_pid)]
-    assert obscura, "obscura not started under the watchdog"
+    port = child.stdout.readline().strip()
+    # the engine itself (not the sh/bwrap wrapper): the process whose command line is `obscura serve ... --port N`
+    obscura = [int(l.split(None, 1)[0]) for l in subprocess.run(["ps", "-axo", "pid=,args="], capture_output=True, text=True)
+               .stdout.splitlines() if f"--port {port}" in l and "serve" in l and "sh -c" not in l and "bwrap" not in l]
+    assert obscura, "obscura not started"
     os.kill(child.pid, signal.SIGKILL)
     child.wait()
     deadline = time.time() + 6
@@ -221,3 +230,16 @@ async def test_unresponsive_page_moves_to_chromium(base, monkeypatch):
         if find_obscura():
             assert "engine: chromium (page unresponsive on obscura)" in out
         assert 'textbox "Username"' in out
+
+
+@pytest.mark.skipif(eng.IS_MAC or not eng.sandbox_tool(), reason="Linux bubblewrap sandbox")
+def test_linux_sandbox_hides_home_and_allows_only_its_temp_dir(tmp_path):
+    import os
+    import subprocess
+    home = Path.home()
+    jail = eng.bwrap_args(str(tmp_path), "/usr/bin")
+    run = lambda cmd: subprocess.run([*jail, "/bin/sh", "-c", cmd], capture_output=True, text=True, timeout=30)
+    assert run(f"ls {home}").returncode != 0  # the home folder doesn't exist inside the sandbox
+    assert run(f"echo x > {tmp_path}/ok && cat {tmp_path}/ok").stdout.strip() == "x"
+    assert run("echo x > /usr/evil").returncode != 0  # system folders are read-only
+    assert os.getuid() == 0 or run("id -u").stdout.strip() != "0"

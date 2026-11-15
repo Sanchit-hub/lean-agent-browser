@@ -11,6 +11,7 @@ import asyncio
 import hashlib
 import logging
 import os
+import platform
 import secrets
 import shutil
 import socket
@@ -25,28 +26,39 @@ from playwright.async_api import Browser, BrowserContext, Page, Playwright, asyn
 
 log = logging.getLogger("lean_browser.engine")
 
-# Pinned, verified Obscura releases (SHA256 of the extracted macOS arm64 binaries). The default stays on
+# Release platform names, as in Obscura's archive names (obscura-<platform>.tar.gz).
+PLATFORM = {("Darwin", "arm64"): "aarch64-macos", ("Linux", "x86_64"): "x86_64-linux",
+            ("Linux", "aarch64"): "aarch64-linux"}.get((platform.system(), platform.machine()))
+IS_MAC = platform.system() == "Darwin"
+
+# Pinned, verified Obscura releases: SHA256 of the extracted binaries per platform. The default stays on
 # the version that passed the full suite; others can be tried with LEANB_OBSCURA_VERSION=<version>.
 OBSCURA_HASHES = {
-    "0.2.6": {  # release digest 19faa248…bd0, verified 2026-11-14
-        "obscura": "2690b133d1c46b40473e0de31cea53757b5283f5caa8911f738bbb1ac8db036d",
-        "obscura-worker": "7b2e6e0234283b5a18ed03649adcf66aefe90ef43ed3817241e47b63ad59c5a5",
+    "0.2.6": {  # macOS release digest 19faa248…bd0, verified 2026-11-14 (macOS only: rollback version)
+        "aarch64-macos": {"obscura": "2690b133d1c46b40473e0de31cea53757b5283f5caa8911f738bbb1ac8db036d",
+                          "obscura-worker": "7b2e6e0234283b5a18ed03649adcf66aefe90ef43ed3817241e47b63ad59c5a5"},
     },
-    "0.2.7": {  # release digest fc7e73f2…7c1, verified 2026-11-15
-        "obscura": "d09acc26fb1c5b0ea2ef297f55ea2430f765395d8cfd2eda78fcb50458153195",
-        "obscura-worker": "241bc00417865ff34436e16c8c186ff67b1c28b4226f929e2ad556a3f3265c88",
+    "0.2.7": {  # verified 2026-11-15 (macOS) and 2026-11-16 (Linux) against GitHub's asset digests
+        "aarch64-macos": {"obscura": "d09acc26fb1c5b0ea2ef297f55ea2430f765395d8cfd2eda78fcb50458153195",
+                          "obscura-worker": "241bc00417865ff34436e16c8c186ff67b1c28b4226f929e2ad556a3f3265c88"},
+        "x86_64-linux": {"obscura": "547f9d8a60048983f0e45c310f160d1239575af062af28e4f6755e361f8abcbf",
+                         "obscura-worker": "6956274a7e517666386493962866f95a39ace2f71d864ad2e3bac7640145c311"},
+        "aarch64-linux": {"obscura": "d94c66b50753992272f83960763cf278a84de62563ba56278aa3a1d4f2f31d6f",
+                          "obscura-worker": "1972bd1d77284d343a9d0e2e4e7b80cd655a67dd091c62ed1842309ecbdd645a"},
     },
 }
-DEFAULT_OBSCURA_VERSION = "0.2.7"  # 0.2.6 kept for rollback (LEANB_OBSCURA_VERSION=0.2.6)
-# SHA256 of the release archive obscura-aarch64-macos.tar.gz per version (from GitHub's asset digests)
+DEFAULT_OBSCURA_VERSION = "0.2.7"  # 0.2.6 kept for rollback on macOS (LEANB_OBSCURA_VERSION=0.2.6)
+# SHA256 of the release archive obscura-<platform>.tar.gz per version (from GitHub's asset digests)
 OBSCURA_RELEASE_SHA256 = {
-    "0.2.6": "19faa248ac762f466ddb822dbb03ed4f097312d10d1a4d5b2143e6040a9bebd0",
-    "0.2.7": "fc7e73f23058f18d6d5be983d83b24ba374d12167677657a307a9476c0f5a7c1",
+    "0.2.6": {"aarch64-macos": "19faa248ac762f466ddb822dbb03ed4f097312d10d1a4d5b2143e6040a9bebd0"},
+    "0.2.7": {"aarch64-macos": "fc7e73f23058f18d6d5be983d83b24ba374d12167677657a307a9476c0f5a7c1",
+              "x86_64-linux": "11b53d27cd743e00e196e216920e7f3f794cf378e3f1792b8d25d3beabaf9cad",
+              "aarch64-linux": "4ee0aeeb38fa8bb2cb004ba104abe1c79f1bdfd02f51672c694e8234a5ae0e5c"},
 }
 OBSCURA_VERSION = os.environ.get("LEANB_OBSCURA_VERSION", DEFAULT_OBSCURA_VERSION)
 if OBSCURA_VERSION not in OBSCURA_HASHES:
     raise RuntimeError(f"unknown LEANB_OBSCURA_VERSION {OBSCURA_VERSION!r}; pinned: {', '.join(OBSCURA_HASHES)}")
-OBSCURA_SHA256 = OBSCURA_HASHES[OBSCURA_VERSION]
+OBSCURA_SHA256 = OBSCURA_HASHES[OBSCURA_VERSION].get(PLATFORM or "", {})
 _REPO = Path(__file__).resolve().parent.parent
 _VENDOR = _REPO / f".vendor/obscura-v{OBSCURA_VERSION}/bin/obscura"
 _HOME_BIN = Path.home() / ".lean-browser/bin/obscura"
@@ -69,6 +81,10 @@ ROUTING_PROBE = """() => {
   const here = location.origin;
   if ([...document.querySelectorAll('iframe[src]')].some(f => { try { return vis(f) && new URL(f.src, location.href).origin !== here; } catch (e) { return false; } }))
     out.push('cross-origin-iframe');
+  const frames = [...document.querySelectorAll('iframe')].filter(vis);
+  if (frames.some(f => f.hasAttribute('srcdoc'))) out.push('srcdoc-iframe');  // Obscura runs no scripts in srcdoc frames
+  if (frames.some(f => { try { return !!(f.contentDocument && f.contentDocument.querySelector('iframe')); } catch (e) { return false; } }))
+    out.push('nested-iframe');  // Obscura loads the inner frame but its elements can't be reached
   return out;
 }"""
 
@@ -157,7 +173,17 @@ def is_private_host(host: str) -> bool:
     return res
 
 
+def sandbox_tool() -> str | None:
+    """The sandbox Obscura runs under: sandbox-exec on macOS, bubblewrap (bwrap) on Linux. Obscura never
+    runs without one; with no sandbox available, Chromium serves every page."""
+    if IS_MAC:
+        return "/usr/bin/sandbox-exec" if os.access("/usr/bin/sandbox-exec", os.X_OK) else None
+    return shutil.which("bwrap")
+
+
 def find_obscura() -> Path | None:
+    if not OBSCURA_SHA256 or not sandbox_tool():
+        return None
     for p in OBSCURA_SEARCH:
         if p and p.is_file():
             return p
@@ -166,6 +192,8 @@ def find_obscura() -> Path | None:
 
 def verify_obscura(binary: Path) -> None:
     """Refuse to run a binary whose hash does not match the pinned release."""
+    if not OBSCURA_SHA256:
+        raise EngineError(f"no pinned Obscura {OBSCURA_VERSION} build for this platform ({PLATFORM or platform.platform()})")
     for name, want in OBSCURA_SHA256.items():
         f = binary.parent / name
         if not f.is_file():
@@ -192,6 +220,24 @@ def sandbox_profile(tmpdir: str, bin_dir: str, localhost_only: bool) -> str:
 {net_out}"""
 
 
+def bwrap_args(tmpdir: str, bin_dir: str) -> list[str]:
+    """Linux sandbox for Obscura (bubblewrap): a fresh mount namespace that sees only system libraries,
+    certificates and DNS config read-only, its own binaries read-only and its temp dir read-write. No
+    home folder, no other user files. New user, PID, IPC and UTS namespaces; the network is shared so it
+    can browse (the private-network block still applies, and its CDP port needs the per-launch token)."""
+    a = [sandbox_tool() or "bwrap", "--die-with-parent", "--new-session", "--unshare-all", "--share-net",
+         "--ro-bind", "/usr", "/usr", "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp"]
+    for d in ("/bin", "/sbin", "/lib", "/lib64", "/lib32"):
+        if os.path.islink(d):
+            a += ["--symlink", os.readlink(d), d]
+        elif os.path.isdir(d):
+            a += ["--ro-bind", d, d]
+    for d in ("/etc/ssl", "/etc/ca-certificates", "/etc/pki", "/etc/resolv.conf", "/etc/hosts", "/etc/nsswitch.conf",
+              "/etc/host.conf", "/etc/gai.conf", "/etc/fonts", "/etc/localtime", "/run/systemd/resolve"):
+        a += ["--ro-bind-try", d, d]
+    return a + ["--ro-bind", bin_dir, bin_dir, "--bind", tmpdir, tmpdir, "--chdir", tmpdir]
+
+
 @dataclass
 class ObscuraProcess:
     """One sandboxed `obscura serve` on 127.0.0.1 with a per-launch bearer token."""
@@ -215,14 +261,26 @@ class ObscuraProcess:
     def start(self, timeout: float = 15) -> None:
         verify_obscura(self.binary)
         self.tmp = os.path.realpath(tempfile.mkdtemp(prefix="leanb-obscura-"))
-        prof = Path(self.tmp) / "sandbox.sb"
-        prof.write_text(sandbox_profile(self.tmp, str(self.binary.parent.resolve()), self.localhost_only))
+        bin_dir = str(self.binary.parent.resolve())
+        if IS_MAC:
+            prof = Path(self.tmp) / "sandbox.sb"
+            prof.write_text(sandbox_profile(self.tmp, bin_dir, self.localhost_only))
+            jail = ["/usr/bin/sandbox-exec", "-f", str(prof)]
+        else:
+            if self.localhost_only:  # bubblewrap can't limit outbound traffic to localhost
+                raise EngineError("localhost_only is only enforced on macOS")
+            if not sandbox_tool():
+                raise EngineError("bubblewrap (bwrap) is needed to sandbox Obscura on Linux")
+            jail = bwrap_args(self.tmp, bin_dir)
         ready = Path(self.tmp) / "ready"
         # A tiny sh supervisor inside the sandbox kills Obscura when the Python process that started it
         # goes away (even after SIGKILL), so a crashed or killed client never leaves an orphaned engine.
         watchdog = ('"$@" & c=$!; trap \'kill $c 2>/dev/null; exit 0\' TERM INT HUP; '
                     'while kill -0 "$P" 2>/dev/null && kill -0 $c 2>/dev/null; do sleep 1; done; kill $c 2>/dev/null; wait $c')
-        args = ["/usr/bin/sandbox-exec", "-f", str(prof), "/bin/sh", "-c", watchdog, "sh", str(self.binary), "serve",
+        # On Linux, bwrap --die-with-parent plus its own PID namespace does the same job: when the client dies,
+        # bwrap dies, and every process in the namespace goes with it.
+        sup = ["/bin/sh", "-c", watchdog, "sh"] if IS_MAC else []
+        args = [*jail, *sup, str(self.binary), "serve",
                 "--host", "127.0.0.1", "--port", str(self.port), "--ready-file", str(ready), "--quiet"]
         if self.allow_private_network:
             args.append("--allow-private-network")

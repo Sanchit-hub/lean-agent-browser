@@ -175,8 +175,26 @@
     const l = el.closest('main,nav,header,footer,aside,form,dialog,[role=dialog],[role=main],[role=navigation]');
     return l ? (l.tagName + (l.id ? '#' + l.id : '')) : '-';
   }
+  const rowText = el => { const row = el.closest && el.closest('tr,li,[role=row],article');
+    return row ? (row.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 60) : ''; };
+  // Short label for the row/card a control sits in, from its text minus the controls' own text
+  // ("Nisha Gupta, 2 days"). Shown only for controls whose role+name repeats on the page.
+  const rowLabel = el => {
+    const row = el.closest && el.closest('tr,li,[role=row],[role=listitem],article,section,fieldset');
+    if (!row || row.querySelectorAll(INTERACTIVE_SEL).length > 6) return '';
+    let t = '';
+    const w = (row.ownerDocument || document).createTreeWalker(row, 4);
+    for (let n = w.nextNode(); n && t.length < 80; n = w.nextNode()) {
+      const p = n.parentElement;
+      if (!p || p.closest(INTERACTIVE_SEL) || p.closest('script,style,[hidden],[aria-hidden=true]')) continue;
+      t += ' ' + n.nodeValue;
+    }
+    return t.replace(/\s+/g, ' ').trim().slice(0, 50);
+  };
   function assignId(el, role, name) {
-    const base = role + '|' + name + '|' + landmark(el);
+    // The row's text is part of the key: when a list re-renders in a new order, "Approve" in Nisha's row
+    // keeps Nisha's id instead of inheriting the id of whichever "Approve" now sits in that position.
+    const base = role + '|' + name + '|' + landmark(el) + '|' + rowText(el);
     const k = (fpCount.get(base) || 0) + 1;
     fpCount.set(base, k);
     const fp = base + '|' + k;
@@ -251,8 +269,10 @@
     if (el.getAttribute('name')) fp.nm = el.getAttribute('name');
     const form = el.form || (el.closest && el.closest('form'));
     if (form) fp.form = form.id || form.getAttribute('name') || form.getAttribute('action') || 'form';
-    const row = el.closest && el.closest('tr,li,[role=row],article');
-    if (row) { const rt = (row.textContent || '').replace(/\s+/g, ' ').trim(); if (rt) fp.ctx = rt.slice(0, 60); }
+    const rt = rowText(el); if (rt) fp.ctx = rt;
+    if (role === 'button' || role === 'link' || role === 'checkbox' || role === 'switch' || role === 'clickable') {
+      const rl = rowLabel(el); if (rl && rl !== e.name) e._row = rl;
+    }
     fp.lm = landmark(el);
     if (form && (el.tagName === 'BUTTON' ? /^(submit|)$/i.test(el.getAttribute('type') || '') : el.tagName === 'INPUT' && /^(submit|image)$/i.test((el.getAttribute('type') || '')))) fp.sub = 1;
     e.fp = fp;
@@ -274,7 +294,20 @@
       const so = el.selectedIndex >= 0 ? os[el.selectedIndex] : null;
       if (so && so.value !== '') e.val = clip(so.text, 25);
     }
-    if (role === 'checkbox' || role === 'switch') e.checked = el.checked !== undefined ? !!el.checked : el.getAttribute('aria-checked') === 'true';
+    if (role === 'checkbox' || role === 'switch') e.checked = el.tagName === 'INPUT' ? !!el.checked : el.getAttribute('aria-checked') === 'true';
+    if (role === 'slider') {
+      const v = el.tagName === 'INPUT' ? el.value : (el.getAttribute('aria-valuetext') || el.getAttribute('aria-valuenow'));
+      if (v !== null && v !== '') e.val = clip(String(v), 20);
+      const lo = el.tagName === 'INPUT' ? el.min : el.getAttribute('aria-valuemin'), hi = el.tagName === 'INPUT' ? el.max : el.getAttribute('aria-valuemax');
+      if (lo !== null && lo !== '' && hi !== null && hi !== '') e.range = lo + '-' + hi;
+    }
+    if (el.getAttribute('aria-pressed') === 'true') e.pressed = true;
+    if (role !== 'combobox' && el.getAttribute('aria-expanded')) {
+      e.expanded = el.getAttribute('aria-expanded') === 'true';
+      // what an open disclosure reveals (FAQ answer, details panel), so the result shows it directly
+      const t = e.expanded && el.getAttribute('aria-controls') && el.ownerDocument.getElementById(el.getAttribute('aria-controls'));
+      if (t && visible(t)) { const tx = clip(t.innerText || '', 160); if (tx) e.shows = tx; }
+    }
     if (role === 'combobox' && el.tagName !== 'INPUT' && el.tagName !== 'SELECT') {
       e.custom = true;
       const v = (el.innerText || '').trim(); if (v && v !== e.name) e.val = clip(v, 30);
@@ -469,6 +502,7 @@
       return;
     }
     if (/^H[1-4]$/.test(tag) && (FULL || +tag[1] <= 3)) {
+      if (el.querySelector(INTERACTIVE_SEL)) { walk(el, sink, ctx); return; }  // e.g. accordion buttons inside <h3>
       if (visible(el) && onScreenSized(el)) { const tx = clip(el.innerText, 80); if (tx) sink.push({ t: 'h', lvl: +tag[1], text: tx }); }
       return;
     }
@@ -522,6 +556,13 @@
   roleOf = function (el) { const r = origRole(el); return r || (pointerExtra.has(el) ? 'clickable' : null); };
 
   walk(root, out, { inGroup: false, inDialog: !!dialog, frame: null });
+  (function labelRepeats() {  // same role+name more than once: say which row each one belongs to
+    const all = [], each = items => { for (const i of items) { if (i.t === 'el') all.push(i); else if (i.items) each(i.items); } };
+    each(out);
+    const n = new Map();
+    for (const e of all) { const k = e.role + '|' + (e.name || ''); n.set(k, (n.get(k) || 0) + 1); }
+    for (const e of all) { if (e._row && n.get(e.role + '|' + (e.name || '')) > 1) e.where = e._row; delete e._row; }
+  })();
   mark('walk');
   flushIds();
   mark('flush');

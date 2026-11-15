@@ -1,7 +1,8 @@
 """`leanb install`: fetch the engines for a pip install (the same steps install.sh runs for a checkout).
 
-- Obscura (pinned version, see engine.DEFAULT_OBSCURA_VERSION) for macOS arm64: download, check the release SHA256, extract to ~/.lean-browser/bin,
-  check both binaries' pinned hashes, clear the quarantine flag.
+- Obscura (pinned version, see engine.DEFAULT_OBSCURA_VERSION) for macOS arm64, Linux x86_64 and Linux arm64:
+  download, check the release SHA256, extract to ~/.lean-browser/bin, check both binaries' pinned hashes,
+  clear the macOS quarantine flag. On Linux, Obscura only runs under bubblewrap (bwrap).
 - Playwright's Chromium into ~/.lean-browser/pw-browsers.
 Safe to re-run: verified pieces are skipped.
 """
@@ -9,7 +10,6 @@ from __future__ import annotations
 
 import hashlib
 import os
-import platform
 import shutil
 import subprocess
 import sys
@@ -18,10 +18,11 @@ import tempfile
 import urllib.request
 from pathlib import Path
 
-from lean_browser.engine import OBSCURA_RELEASE_SHA256, OBSCURA_VERSION, EngineError, verify_obscura
+from lean_browser.engine import (IS_MAC, OBSCURA_RELEASE_SHA256, OBSCURA_VERSION, PLATFORM, EngineError, sandbox_tool,
+                                 verify_obscura)
 
-TARBALL = "obscura-aarch64-macos.tar.gz"
-TARBALL_SHA256 = OBSCURA_RELEASE_SHA256[OBSCURA_VERSION]
+TARBALL = f"obscura-{PLATFORM}.tar.gz"
+TARBALL_SHA256 = OBSCURA_RELEASE_SHA256[OBSCURA_VERSION].get(PLATFORM or "")
 URL = f"https://github.com/h4ckf0r0day/obscura/releases/download/v{OBSCURA_VERSION}/{TARBALL}"
 HOME = Path.home() / ".lean-browser"
 BIN = HOME / "bin"
@@ -33,9 +34,12 @@ def _say(msg: str):
 
 
 def install_obscura() -> bool:
-    if platform.system() != "Darwin" or platform.machine() != "arm64":
-        _say("Skipping Obscura: only macOS arm64 is supported (Chromium will serve every page)")
+    if not TARBALL_SHA256:
+        _say(f"Skipping Obscura: no pinned {OBSCURA_VERSION} build for this platform (Chromium will serve every page)")
         return False
+    if not sandbox_tool():
+        _say("Note: Obscura needs bubblewrap to run sandboxed (sudo apt install bubblewrap). "
+             "Until then Chromium serves every page.")
     try:
         verify_obscura(BIN / "obscura")
         _say(f"Obscura {OBSCURA_VERSION} already installed and verified")
@@ -61,7 +65,8 @@ def install_obscura() -> bool:
             dst = BIN / name
             shutil.copyfile(Path(td) / name, dst)
             os.chmod(dst, 0o755)
-            subprocess.run(["xattr", "-d", "com.apple.quarantine", str(dst)], capture_output=True)
+            if IS_MAC:
+                subprocess.run(["xattr", "-d", "com.apple.quarantine", str(dst)], capture_output=True)
     verify_obscura(BIN / "obscura")  # raises if the extracted binaries don't match the pinned hashes
     return True
 
@@ -71,6 +76,9 @@ def install_chromium():
     env = {**os.environ, "PLAYWRIGHT_BROWSERS_PATH": str(BROWSERS)}
     subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=True, env=env)
     os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(BROWSERS)
+    if not IS_MAC:
+        _say("Linux: if Chromium fails to start, install its system libraries once with: "
+             f"sudo {sys.executable} -m playwright install-deps chromium")
 
 
 def main() -> int:

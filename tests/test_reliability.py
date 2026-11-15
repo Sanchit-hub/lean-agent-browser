@@ -247,3 +247,56 @@ async def test_prompt_dialog_gets_text(s):
     assert subs(s.base, "rename")[0]["fields"] == {"old": "Untitled folder", "new": "Invoices 2026"}
     with pytest.raises(ActionError, match="accept:TEXT"):
         await s.act("dialog", None, "maybe")
+
+
+# ---------- found by the 100-task benchmark ----------
+
+def rowid(out, role_name, row):
+    m = re.search(rf'(\d+): {role_name} \(in "{re.escape(row)}', out)
+    assert m, out
+    return int(m.group(1))
+
+
+async def test_reordered_list_keeps_ids_with_their_rows(s):
+    """A list that re-renders in a new order must not move an id to another row's button."""
+    out = await s.open(s.base + "/b/leave.html")
+    nisha = rowid(out, 'button "Approve"', "Nisha Gupta")
+    await s.cur.page.wait_for_timeout(1700)  # the page re-renders (reversed) every 1.5 s
+    res = await s.act("click", nisha)
+    assert "Approved Nisha Gupta" in res, res
+    assert [x["fields"] for x in subs(s.base, "leave")] == [{"name": "Nisha Gupta", "decision": "approve"}]
+
+
+async def test_switch_state_comes_from_aria_checked(s):
+    out = await s.open(s.base + "/b/security.html")
+    assert 'switch "Marketing emails" on' in out and 'switch "Two-factor authentication" off' in out, out
+    res = await s.act("click", idof(out, 'switch "Two-factor authentication"'))
+    assert res.startswith("status: verified") and 'switch "Two-factor authentication" on' in res, res
+
+
+async def test_sliders_are_set_and_verified(s):
+    out = await s.open(s.base + "/b/display.html")
+    assert 'slider "Brightness" = 50% (0-100)' in out, out
+    res = await s.act("fill", idof(out, 'slider "Brightness"'), "30")
+    assert res.startswith("status: verified (slider at 30)"), res
+    with pytest.raises(ActionError, match="step"):
+        await s.act("fill", idof(out, 'slider "Brightness"'), "33")
+    out = await s.open(s.base + "/b/alerts.html")
+    res = await s.act("fill", idof(out, 'slider "Alert volume"'), "70")
+    assert res.startswith("status: verified (slider at 70)"), res
+    assert await s.cur.page.input_value("#vol") == "70"
+
+
+async def test_accordion_buttons_in_headings_show_what_they_open(s):
+    out = await s.open(s.base + "/b/faq.html")
+    q = idof(out, r'button "Do you ship internationally\?" \[closed\]')
+    res = await s.act("click", q)
+    assert '[open] -> "Yes, we ship to 38 countries.' in res, res
+
+
+async def test_frames_obscura_cannot_drive_go_to_chromium(s):
+    for page, why in (("/b/poll.html", "srcdoc-iframe"), ("/b/track.html", "nested-iframe")):
+        out = await s.open(s.base + page)
+        if s.engine == "obscura":
+            assert f"engine: chromium (routed: {why})" in out, out
+        assert "[frame:" in out, out
