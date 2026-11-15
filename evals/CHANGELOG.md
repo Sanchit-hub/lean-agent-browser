@@ -1,5 +1,28 @@
 # Eval changelog
 
+## 2026-11-15 (night): live-site suite
+
+Five tasks on real public pages (Wikipedia ×2, a GitHub repo, example.com, httpbin's test form). Success
+is judged from the final answer, because there is no fixture server. Each task ran once per mode.
+**Live pages and networks vary, so treat these as a sanity check, not a benchmark.**
+
+| Task | Playwright MCP tokens | Lean tokens |
+|---|---|---|
+| live-python-designer | 17,326 ✅ | 8,129 ✅ |
+| live-halley | 25,761 ✅ | 8,183 ✅ * |
+| live-obscura-license | 18,193 ✅ | 8,400 ✅ |
+| live-example-link | 25,219 ✅ | 11,809 ✅ |
+| live-httpbin-form | 48,079 ✅ | 12,856 ✅ |
+| **Total** | **5/5, 134,578** | **5/5, 49,377 (2.7× fewer)** |
+
+\* `live-halley` first **timed out on lean (900 s)**. That page leaves Obscura's script thread stuck
+after load, and lean had no time limit on its page calls. Fixed in `367f395`: probes are time-boxed, the
+page moves to Chromium, and the hung engine restarts. After the fix the task passed in 26 s.
+
+A run before that one is **invalid**: the `leanb` script had been removed by mistake, so `claude -p`
+ran without browsing tools and the agent answered from memory. The driver now refuses to start when an
+MCP server binary is missing.
+
 ## 2026-11-15 (later): Vercel agent-browser added as a baseline
 
 Same harness as below: `claude -p`, Claude Sonnet 5.5, our system prompt, only the MCP server under
