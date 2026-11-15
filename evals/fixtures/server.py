@@ -250,6 +250,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, page("Welcome", "<main><h1>Account created</h1></main>"))
         if path.startswith("/api/submit/"):
             task = path.rsplit("/", 1)[1]
+            delay = float(parse_qs(urlparse(self.path).query).get("delay", ["0"])[0])
+            if delay:
+                import time
+                time.sleep(min(delay, 15))
             self._record(task, ctype, fields, has_file)
             if ctype == "application/json":
                 return self._json({"ok": True, "message": "Saved"})

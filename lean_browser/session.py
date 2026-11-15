@@ -17,6 +17,7 @@ import asyncio
 import json
 import os
 import re
+import time
 from urllib.parse import urlparse
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -155,9 +156,75 @@ TARGET_STATE_JS = r"""el => {
 
 _norm = lambda x: " ".join(str(x or "").split()).lower()
 
+# Outcome signals. English-only heuristics: a site that shows neither stays "unverified"; pass expect= then.
+SUCCESS_RE = re.compile(r"\b(thank(s| you)|success(ful(ly)?)?|saved|created|received|submitted|placed|confirmed|sent|"
+                        r"updated|added|welcome|complete(d)?|booked|registered|published|posted)\b", re.I)
+ERROR_RE = re.compile(r"\b(errors?|invalid|incorrect|failed|failure|wrong|already (taken|exists|registered|in use)|"
+                      r"is taken|denied|not allowed|forbidden|unable|could ?n[o\'’]t|try again|declined|rejected|"
+                      r"must (be|have|include|match|accept)|(is|are) required|do(es)? not match)\b", re.I)
+SAFE_ACTIONS = {"hover", "focus", "scroll", "wait_for"}
+SUBMIT_KEYS = {"enter"}
+
+
+def retry_safety(action: str, entry: dict | None, value=None) -> str:
+    """safe: repeating it has no side effect. conditional: repeat only after checking the current state.
+    unsafe: may submit, send, buy or delete; never repeated automatically after an uncertain outcome."""
+    if action in SAFE_ACTIONS:
+        return "safe"
+    e = entry or {}
+    fp = e.get("fp") or {}
+    if action == "click" and (RISKY.search(e.get("name") or "") or fp.get("sub")):
+        return "unsafe"
+    if action == "press" and str(value or "").lower() in SUBMIT_KEYS and (
+            RISKY.search(e.get("name") or "") or fp.get("sub") or (fp.get("form") and e.get("role") == "textbox")):
+        return "unsafe"
+    return "conditional"
+
+
+def risk_level(action: str, entry: dict | None, value=None) -> str:
+    if action in ("click", "press") and RISKY.search((entry or {}).get("name") or ""):
+        return "high"
+    return "medium" if retry_safety(action, entry, value) == "unsafe" else "low"
+
+
+def _texts(snap: Snapshot | None) -> list[tuple[str, str]]:
+    """(kind, text) for headings and live-region text (role=alert/status, aria-live) in a snapshot."""
+    out: list[tuple[str, str]] = []
+
+    def walk(entries):
+        for e in entries:
+            if e["t"] == "h":
+                out.append(("h", e["text"]))
+            elif e["t"] == "txt" and e.get("live"):
+                out.append(("live", e["text"]))
+            elif e["t"] == "group":
+                walk(e["items"])
+    if snap:
+        walk(snap.data.get("entries", []))
+    return out
+
+
+def error_category(msg: str) -> str:
+    """Stable category for an error message (traces, LeanBrowserError.category)."""
+    m = msg.lower()
+    for cat, keys in (("blocked", ("blocked:", "duplicate:", "not in allowed_domains", "outside the allowed")),
+                      ("ambiguous", ("ambiguous",)),
+                      ("stale", ("is gone", "page changed?", "re-rendered")),
+                      ("not_found", ("not found", "no such", "no option", "found no", "nothing to extract", "no page open")),
+                      ("timeout", ("timed out", "timeout", "stopped responding")),
+                      ("network", ("private", "net::", "err_", "dns", "connection")),
+                      ("invalid", ("needs ", "must be", "unknown ", "missing argument", "value must"))):
+        if any(k in m for k in keys):
+            return cat
+    return "engine"
+
 
 class ActionError(Exception):
     """Short, actionable error for the agent."""
+
+
+_NAV_ERR = ("execution context was destroyed", "navigat", "frame was detached", "target closed",
+            "context or browser has been closed", "cannot find context")
 
 
 @dataclass
@@ -166,6 +233,7 @@ class TabState:
     snapper: Snapshotter
     notes: list[str] = field(default_factory=list)
     dialog_policy: str = "accept"
+    nav_status: int | None = None
 
     @property
     def page(self) -> Page:
@@ -215,6 +283,9 @@ class Session:
         self._watched_ctx: set[int] = set()
         self._opening = False  # pages we create ourselves are not popups
         self._seen: dict[tuple, set[str]] = {}  # extract(new_only=True) memory, per page path + scope
+        self.last_outcome: dict | None = None  # machine-readable result of the last act/fill_form
+        self._unsafe_log: dict[tuple, tuple[float, str]] = {}  # duplicate guard: key -> (time, status)
+        self.duplicate_window_s = 600
 
     # ---------- tabs ----------
     @property
@@ -234,6 +305,14 @@ class Session:
             except Exception:
                 pass
         page.on("dialog", on_dialog)
+
+        def on_response(r):
+            try:
+                if r.request.is_navigation_request() and r.frame == page.main_frame:
+                    ts.nav_status = r.status
+            except Exception:
+                pass
+        page.on("response", on_response)
         ctx = page.context
         if id(ctx) not in self._watched_ctx:
             self._watched_ctx.add(id(ctx))
@@ -477,8 +556,15 @@ class Session:
         else:
             raise ActionError(f"unknown action {action!r}")
 
-    async def act(self, action: str, id: int | None = None, value=None) -> str:
+    async def act(self, action: str, id: int | None = None, value=None, expect: str | None = None,
+                  dry_run: bool = False) -> str:
         action = action.lower().strip()
+        self.last_outcome = None
+        if dry_run and action in ("back", "forward", "reload", "tab", "dialog", "wait_for"):
+            return json.dumps({"executed": False, "action": action, "value": value, "target": None,
+                               "risk": "low", "retry_safety": "conditional" if action != "wait_for" else "safe",
+                               "requires_confirmation": False,
+                               "note": "preview only; nothing was done"})
         if action in ("back", "forward", "reload"):
             ts = self.cur
             fn = {"back": ts.page.go_back, "forward": ts.page.go_forward, "reload": ts.page.reload}[action]
@@ -504,17 +590,104 @@ class Session:
         entry = _index(before).get(int(id)) if id is not None else None
         note = ""
         if id is not None and action != "scroll":
+            # Re-resolving a re-rendered target only reads the page; nothing has been executed yet.
             id, before, entry, note = await self._resolve_or_recover(ts, int(id), before, entry)
         name = (entry or {}).get("name", "")
         risky = action in ("click", "press") and bool(RISKY.search(name or ""))
-        if risky and self.confirm_risky and str(value or "").lower() != "confirm":
+        safety = retry_safety(action, entry, value)
+        risk = risk_level(action, entry, value)
+        target = None if id is None else {"id": id, "role": (entry or {}).get("role"), "name": name}
+        v = str(value or "").lower() if action == "click" else ""
+        dup = self._dup_key(ts, action, entry, value) if safety == "unsafe" else None
+        prior = self._unsafe_log.get(dup) if dup else None
+        if prior and (time.time() - prior[0] > self.duplicate_window_s or prior[1] not in ("verified", "ambiguous", "timed_out")):
+            prior = None
+        needs_confirm = (risky and self.confirm_risky and v not in ("confirm", "repeat")) or (prior is not None and v != "repeat")
+        if dry_run:
+            ctx = {k: (entry or {}).get("fp", {}).get(k) for k in ("form", "ctx", "lm") if (entry or {}).get("fp", {}).get(k)}
+            return json.dumps({
+                "executed": False, "action": action, "value": None if (entry or {}).get("type") == "password" else value,
+                "target": target and {**target, **({"context": ctx} if ctx else {})},
+                "recovered": note.strip() or None, "risk": risk, "retry_safety": safety,
+                "requires_confirmation": needs_confirm,
+                **({"previous": f"same action {int(time.time() - prior[0])}s ago, status {prior[1]}"} if prior else {}),
+                "note": "preview only; nothing was dispatched, and the page can change before you execute"},
+                ensure_ascii=False)
+        base_outcome = {"action": action, "target": target, "retry_safety": safety, "risk": risk,
+                        "recovery": [note.strip()] if note else []}
+        if risky and self.confirm_risky and v not in ("confirm", "repeat"):
+            self.last_outcome = {**base_outcome, "executed": False, "status": "blocked",
+                                 "evidence": ["needs confirmation (confirm_risky)"]}
             raise ActionError(f'blocked: {(entry or {}).get("role", "element")} "{name}" looks irreversible; '
                               'call act again with value="confirm" to proceed')
+        if prior is not None and v != "repeat":
+            ago = int(time.time() - prior[0])
+            self.last_outcome = {**base_outcome, "executed": False, "status": "blocked",
+                                 "evidence": [f"duplicate of an action {ago}s ago (status {prior[1]})"]}
+            raise ActionError(f'duplicate: {(entry or {}).get("role", "element")} "{name}" was already used on this page '
+                              f'{ago}s ago (status: {prior[1]}). Check the page first; to really do it again call act '
+                              'with value="repeat"')
         tabs_before = len(self.tabs)
         await self._sync_dialog_policy(ts)
-        await self._perform(ts, action, id, value if action != "click" else None, entry)
-        expect = {"kind": "action", "action": action, "id": id, "value": value, "entry": entry, "risky": risky}
-        return await self._after(ts, before, tabs_before, note, expect)
+        ts.nav_status = None
+        rec = base_outcome["recovery"]
+        uncertain, id = await self._perform_guarded(ts, action, id, value if action != "click" else None, entry, safety, rec)
+        exp = {"kind": "action", "action": action, "id": id, "value": value, "entry": entry, "risky": risky,
+               "safety": safety, "expect": expect, "uncertain": uncertain, "base": base_outcome}
+        out = await self._after(ts, before, tabs_before, note, exp)
+        if dup and self.last_outcome:
+            self._unsafe_log[dup] = (time.time(), self.last_outcome["status"])
+        return out
+
+    def _dup_key(self, ts: TabState, action: str, entry: dict | None, value=None) -> tuple:
+        e = entry or {}
+        fp = e.get("fp") or {}
+        return (ts.page.url.split("#")[0], action, e.get("role"), e.get("name"), fp.get("form"), fp.get("ctx"),
+                str(value or "").lower() if action == "press" else "")
+
+    async def _perform_guarded(self, ts: TabState, action: str, el_id, value, entry: dict | None, safety: str,
+                               rec: list) -> tuple[str | None, int | None]:
+        """Run the action with bounded, safety-aware recovery. Returns (uncertain, id): `uncertain` is a reason
+        when the action may or may not have been dispatched (the caller reports ambiguous instead of
+        guessing); `id` is the element finally acted on (it changes if the target was re-identified)."""
+        try:
+            await self._perform(ts, action, el_id, value, entry)
+            if action in ("fill", "clear", "select", "check", "uncheck") and el_id is not None \
+                    and await self._target_state(ts, el_id) is None:
+                # The value went into a node the page threw away mid-action (framework re-render).
+                raise ActionError("the target was replaced while the action ran")
+            return None, el_id
+        except ActionError as e:
+            if action not in ("fill", "clear", "select", "check", "uncheck") or el_id is None:
+                raise
+            # Partial success first: maybe the field already is in the wanted state.
+            st = await self._target_state(ts, el_id)
+            ok, _ = self._check_value(action, value, entry, st, None)
+            if ok:
+                rec.append(f"{action} raised ({e}) but the field is already in the wanted state; not retried")
+                return None, el_id
+            if st is not None:
+                raise
+            # Target detached mid-action (re-render): re-identify once and retry once. Conditional actions
+            # only, and the state was checked above.
+            try:
+                new_id, _, new_entry, note = await self._resolve_or_recover(ts, int(el_id), await self._take(ts), entry)
+            except ActionError:
+                if "replaced while the action ran" in str(e):
+                    return None, el_id  # nothing to retry on; verification reports the element as gone
+                raise e
+            rec.append(f"{action} failed because the target was re-rendered; retried once on id {new_id}")
+            await self._perform(ts, action, new_id, value, new_entry)
+            return None, new_id
+        except Exception as e:
+            msg = str(e).lower()
+            if action in ("click", "press") and any(k in msg for k in _NAV_ERR):
+                rec.append("the page navigated while the action ran; treated as dispatched")
+                return None, el_id
+            if action in ("click", "press") and safety == "unsafe":
+                rec.append(f"{action} raised {type(e).__name__}; not retried (unsafe action)")
+                return f"{action} may have been sent before the error ({_short(e)})", el_id
+            raise
 
     async def _resolve_or_recover(self, ts: TabState, el_id: int, before: Snapshot, entry: dict | None):
         """If the id's element is gone (framework re-render), re-resolve it ONCE by role + name on a fresh
@@ -602,11 +775,7 @@ class Session:
         await asyncio.sleep(0.05)
         settled = await self._settle(ts)
         if len(self.tabs) > tabs_before:
-            nts = self.cur
-            await self._settle(nts)
-            note = self._drain(ts)
-            status = "status: verified (new tab opened)\n" if expect else ""
-            return status + prefix + (note + "\n" if note else "") + self._render_full(nts, await self._take(nts))
+            return await self._new_tab_result(ts, prefix, expect)
         await self._drain_dialog_shim(ts)
         # Field states are read before the after-snapshot so they describe the same moment.
         states = {}
@@ -620,16 +789,16 @@ class Session:
             # change something never wait.
             for _ in range(15):
                 if len(self.tabs) > tabs_before:
-                    nts = self.cur
-                    await self._settle(nts)
-                    note = self._drain(ts)
-                    return ("status: verified (new tab opened)\n" + prefix + (note + "\n" if note else "")
-                            + self._render_full(nts, await self._take(nts)))
+                    return await self._new_tab_result(ts, prefix, expect)
                 await asyncio.sleep(0.1)
         notes = self._drain(ts)
         page_changed = d is None
         changed = page_changed or bool(d)
-        status = self._status(expect, states, after, page_changed, changed, settled, bool(notes)) if expect else ""
+        status = ""
+        if expect:
+            sig = self._signals(ts, before, after, page_changed, expect)
+            exp_res = await self._check_expect(ts, expect.get("expect"), after) if expect.get("expect") else None
+            status = self._status(expect, states, after, page_changed, changed, settled, bool(notes), sig, exp_res)
         head = status + prefix + (notes + "\n" if notes else "")
         if page_changed:
             return head + ts.snapper.render(after, skip_unchanged=False)
@@ -638,45 +807,182 @@ class Session:
             return (head + NO_CHANGE_HINT) if expect else (head + "no change. " + NO_CHANGE_HINT)
         return head + d
 
+    async def _new_tab_result(self, ts: TabState, prefix: str, expect: dict | None) -> str:
+        nts = self.cur
+        await self._settle(nts)
+        note = self._drain(ts)
+        status = self._finish(expect, "verified", ["new tab opened"]) if expect else ""
+        return status + prefix + (note + "\n" if note else "") + self._render_full(nts, await self._take(nts))
+
+    def _signals(self, ts: TabState, before: Snapshot, after: Snapshot, page_changed: bool, expect: dict) -> dict:
+        """Application-level evidence after an action: errors the page shows, success messages, whether the
+        target or its form went away. Only things that are new since `before` count."""
+        bi, ai = _index(before), _index(after)
+        old = set() if page_changed else set(_texts(before))
+        new = [(k, t) for k, t in _texts(after) if (k, t) not in old]
+        errors = []
+        for i, e in ai.items():
+            if e.get("err") and (page_changed or (bi.get(i) or {}).get("err") != e["err"]):
+                errors.append(f'{e.get("name") or e["role"]}: "{e["err"]}"')
+        for k, t in new:
+            if ERROR_RE.search(t) and not SUCCESS_RE.search(t) and (k == "live" or page_changed):
+                errors.append(f'"{t[:80]}"')
+        if ts.nav_status and ts.nav_status >= 400 and page_changed:
+            errors.append(f"HTTP {ts.nav_status}")
+        success = [t for k, t in new if SUCCESS_RE.search(t) and not ERROR_RE.search(t) and (k == "live" or page_changed or k == "h")]
+        tid = expect.get("id")
+        target_gone = expect["kind"] == "action" and tid is not None and not page_changed and tid in bi and tid not in ai
+        # A submitted form whose text fields were emptied (todo inputs, chat boxes) is a success signal too.
+        form_key = ((expect.get("entry") or {}).get("fp") or {}).get("form") if expect["kind"] == "action" else expect.get("form")
+        cleared = False
+        if form_key and not page_changed:
+            filled = [i for i, e in bi.items() if e.get("role") == "textbox" and e.get("val") and (e.get("fp") or {}).get("form") == form_key]
+            cleared = bool(filled) and all(i in ai and not ai[i].get("val") for i in filled)
+        return {"errors": errors, "success": success, "target_gone": target_gone, "cleared": cleared}
+
+    async def _check_expect(self, ts: TabState, want: str, after: Snapshot) -> tuple[bool, str]:
+        """Caller's postcondition: "url:<part>", "gone:<id>", or text that must appear. Bounded to ~3 s."""
+        w = want.strip()
+        deadline = time.time() + 3
+        while True:
+            try:
+                if w.lower().startswith("url:"):
+                    part = w[4:].strip()
+                    ok, why = part in ts.page.url, f"url contains {part!r}"
+                elif w.lower().startswith("gone:"):
+                    gid = int(w[5:].strip())
+                    el = (await ts.page.evaluate_handle(RESOLVE_JS, gid)).as_element()
+                    ok, why = el is None or not await el.evaluate("e => e.isConnected && !!(e.offsetWidth || e.offsetHeight || e.getClientRects().length)"), f"id {gid} gone"
+                else:
+                    ok = await ts.page.evaluate(
+                        "t => { const n = s => (s || '').replace(/\\s+/g, ' ').toLowerCase();"
+                        " return n(document.body && (document.body.innerText || document.body.textContent)).includes(n(t)); }", w)
+                    why = f"text {w[:60]!r} found"
+            except (ValueError, TypeError):
+                raise ActionError('expect must be text, "url:<part>" or "gone:<id>"')
+            except Exception:
+                ok, why = False, "page not readable"
+            if ok or time.time() >= deadline:
+                return (True, "expected " + why) if ok else (False, "expected " + why.replace(" found", "").replace(" gone", " to be gone").replace("url contains", "url to contain") + ", not seen")
+            await asyncio.sleep(0.25)
+
+    def _finish(self, expect: dict, word: str, evidence: list[str]) -> str:
+        ev = [e for e in evidence if e]
+        base = expect.get("base") or {}
+        self.last_outcome = {**base, "executed": True, "status": word, "evidence": ev}
+        if expect.get("kind") == "form":
+            self.last_outcome.setdefault("action", "fill_form")
+        return f"status: {word} ({'; '.join(ev)})\n" if ev else f"status: {word}\n"
+
     def _status(self, expect: dict, states: dict, after: Snapshot, page_changed: bool, changed: bool,
-                settled: bool, dialog: bool) -> str:
+                settled: bool, dialog: bool, sig: dict, exp_res: tuple[bool, str] | None) -> str:
         after_idx = _index(after)
-        evidence: list[str] = []
+        nav: list[str] = []
         if page_changed:
-            evidence.append(f"page changed: {after.data.get('path')}")
+            nav.append(f"page changed: {after.data.get('path')}")
         elif after.data.get("routeChanged"):
-            evidence.append(f"route changed: {after.data.get('path')}")
+            nav.append(f"route changed: {after.data.get('path')}")
+        evidence: list[str] = []
+        fields_ok = True
         if expect["kind"] == "form":
             ok_n, n, problems = expect["ok"], expect["n"], expect["problems"]
-            parts = [f"{ok_n}/{n} fields set"] + problems
-            ok = ok_n == n
-            if expect["submitted"]:
-                parts.append("submitted" + (f", {evidence[0]}" if evidence else (", page updated" if changed else ", no visible change")))
-                ok = ok and changed
-            word = "verified" if ok else ("timed_out" if not settled else "unverified")
-            return f"status: {word} ({'; '.join(parts)})\n"
-        action, el_id = expect["action"], expect["id"]
-        if action in ("fill", "clear", "select", "check", "uncheck", "upload"):
-            ok, reason = self._check_value(action, expect["value"], expect["entry"], states.get(el_id), after_idx.get(el_id))
-            evidence.insert(0, reason)
-            err = (after_idx.get(el_id) or {}).get("err")
-            if err:
-                evidence.append(f'field shows error "{err}"')
-        elif action in ("hover", "focus", "scroll"):
-            return "status: done\n"
-        else:  # click / press: success means something observable happened
-            ok = changed or dialog
-            if not evidence:
-                evidence.append("dialog shown" if dialog and not changed else ("changes below" if changed else "no visible change"))
+            evidence = [f"{ok_n}/{n} fields set"] + problems
+            fields_ok = ok_n == n
+            if not expect["submitted"]:
+                if exp_res is not None:
+                    evidence.append(exp_res[1])
+                    fields_ok = fields_ok and exp_res[0]
+                return self._finish(expect, "verified" if fields_ok else "unverified", evidence)
+            submit_like = True
+            evidence.append("submitted")
+        else:
+            action, el_id = expect["action"], expect["id"]
+            if action in ("fill", "clear", "select", "check", "uncheck", "upload"):
+                ok, reason = self._check_value(action, expect["value"], expect["entry"], states.get(el_id), after_idx.get(el_id))
+                evidence = [reason] + nav
+                err = (after_idx.get(el_id) or {}).get("err")
+                if err:
+                    evidence.append(f'field shows error "{err}"')
+                if exp_res is not None:
+                    evidence.append(exp_res[1])
+                    ok = ok and exp_res[0]
+                word = "verified" if ok else ("timed_out" if not settled else "unverified")
+                return self._finish(expect, word, evidence)
+            if action in ("hover", "focus", "scroll"):
+                return self._finish(expect, "done", [])
+            submit_like = expect.get("safety") == "unsafe"
+        # click / press / form submit: the outcome needs evidence beyond "the event was sent".
+        uncertain = expect.get("uncertain")
+        if sig["errors"]:
+            word = "blocked"
+            evidence += nav + ["page shows errors: " + "; ".join(sig["errors"][:3])]
+        elif exp_res is not None:
+            word = "verified" if exp_res[0] else ("timed_out" if not settled else "unverified")
+            evidence += nav + [exp_res[1]]
+        elif dialog and not changed:
+            word, evidence = "verified", evidence + ["dialog shown"]
+        else:
+            strong = nav + [f'success message "{t[:60]}"' for t in sig["success"][:1]]
+            if sig["target_gone"] and changed:
+                strong.append("target went away")
+            if sig["cleared"]:
+                strong.append("form was cleared")
+            if submit_like:
+                if strong:
+                    word, evidence = "verified", evidence + strong
+                elif changed:
+                    word, evidence = "unverified", evidence + ["page updated but no success signal; pass expect= to check"]
+                else:
+                    word = "ambiguous" if uncertain else ("timed_out" if not settled else "unverified")
+                    evidence.append(uncertain or "no visible change")
+            else:
+                word = "verified" if changed else ("ambiguous" if uncertain else ("timed_out" if not settled else "unverified"))
+                evidence += strong or ["changes below" if changed else (uncertain or "no visible change")]
+        if word == "verified" and not fields_ok:
+            word = "unverified"
         if expect.get("risky"):
             evidence.append("looks irreversible")
-        word = "verified" if ok else ("timed_out" if not settled else "unverified")
-        return f"status: {word} ({'; '.join(e for e in evidence if e)})\n"
+        if word in ("timed_out", "ambiguous") and submit_like:
+            evidence.append("it may still take effect: check the page before repeating")
+        return self._finish(expect, word, evidence)
 
-    async def fill_form(self, fields: dict, submit=False) -> str:
+    async def fill_form(self, fields: dict, submit=False, expect: str | None = None, dry_run: bool = False) -> str:
         ts = self.cur
+        self.last_outcome = None
         before = ts.snapper.last or await self._take(ts)
         idx = _index(before)
+        missing = [str(k) for k in fields if int(k) not in idx]
+        first = idx.get(int(next(iter(fields)))) if fields else None
+        form_key = ((first or {}).get("fp") or {}).get("form")
+        dup = (ts.page.url.split("#")[0], "fill_form", form_key, tuple(sorted(map(str, fields)))) if submit else None
+        prior = self._unsafe_log.get(dup) if dup else None
+        if prior and (time.time() - prior[0] > self.duplicate_window_s or prior[1] not in ("verified", "ambiguous", "timed_out")):
+            prior = None
+        repeat = str(submit).lower() == "repeat" if isinstance(submit, str) else False
+        if dry_run:
+            out = {"executed": False, "action": "fill_form",
+                   "fields": [{"id": int(k), "role": (idx.get(int(k)) or {}).get("role"), "name": (idx.get(int(k)) or {}).get("name"),
+                               "value": "••••" if (idx.get(int(k)) or {}).get("type") == "password" else v}
+                              for k, v in fields.items()],
+                   "submit": bool(submit), "risk": "medium" if submit else "low",
+                   "retry_safety": "unsafe" if submit else "conditional",
+                   "requires_confirmation": prior is not None,
+                   "note": "preview only; nothing was typed or submitted, and the page can change before you execute"}
+            if missing:
+                out["unknown_ids"] = missing
+            if prior:
+                out["previous"] = f"same form submitted {int(time.time() - prior[0])}s ago, status {prior[1]}"
+            return json.dumps(out, ensure_ascii=False)
+        base = {"action": "fill_form", "target": {"form": form_key, "fields": len(fields)},
+                "retry_safety": "unsafe" if submit else "conditional", "risk": "medium" if submit else "low", "recovery": []}
+        if prior is not None and not repeat:
+            ago = int(time.time() - prior[0])
+            self.last_outcome = {**base, "executed": False, "status": "blocked",
+                                 "evidence": [f"duplicate of a submission {ago}s ago (status {prior[1]})"]}
+            raise ActionError(f"duplicate: this form was already submitted from this page {ago}s ago (status: {prior[1]}). "
+                              'Check the page first; to really submit again pass submit="repeat"')
+        if repeat:
+            submit = True
         tabs_before = len(self.tabs)
         await self._sync_dialog_policy(ts)
         errors = []
@@ -687,13 +993,13 @@ class Session:
             try:
                 if role in ("checkbox", "switch"):
                     on = value is True or str(value).strip().lower() in TRUTHY
-                    await self._perform(ts, "check" if on else "uncheck", fid, None, e)
+                    await self._perform_guarded(ts, "check" if on else "uncheck", fid, None, e, "conditional", base["recovery"])
                 elif role in ("select", "radiogroup") or (role == "combobox" and e.get("custom")):
-                    await self._perform(ts, "select", fid, value, e)
+                    await self._perform_guarded(ts, "select", fid, value, e, "conditional", base["recovery"])
                 elif role == "upload":
                     await self._perform(ts, "upload", fid, value, e)
                 else:
-                    await self._perform(ts, "fill", fid, value, e)
+                    await self._perform_guarded(ts, "fill", fid, value, e, "conditional", base["recovery"])
             except ActionError as err:
                 errors.append(f"{fid}: {err}")
         problems, ok_n = [], 0
@@ -709,23 +1015,35 @@ class Session:
                 ok_n += 1
             elif not any(x.startswith(f"{fid}:") for x in errors):
                 problems.append(f"{fid}: {reason}")
+        uncertain = None
+        ts.nav_status = None
         if submit and not errors:
-            if submit is True:
-                first = await self._handle(ts, int(next(iter(fields))))
-                btn = (await first.evaluate_handle(SUBMIT_BUTTON_JS)).as_element()
-                if not btn:
-                    errors.append("submit: no submit button found in the form — pass submit=<button id>")
+            try:
+                if submit is True:
+                    first_el = await self._handle(ts, int(next(iter(fields))))
+                    btn = (await first_el.evaluate_handle(SUBMIT_BUTTON_JS)).as_element()
+                    if not btn:
+                        errors.append("submit: no submit button found in the form — pass submit=<button id>")
+                    else:
+                        await self._click(ts, btn)
                 else:
-                    await self._click(ts, btn)
-            else:
-                try:
                     await self._click(ts, await self._handle(ts, int(submit)))
-                except ActionError as err:
-                    errors.append(f"submit: {err}")
+            except ActionError as err:
+                errors.append(f"submit: {err}")
+            except Exception as err:
+                if any(k in str(err).lower() for k in _NAV_ERR):
+                    base["recovery"].append("the page navigated while submitting; treated as dispatched")
+                else:
+                    base["recovery"].append(f"submit raised {type(err).__name__}; not retried (unsafe action)")
+                    uncertain = f"submit may have been sent before the error ({_short(err)})"
         prefix = ("errors:\n" + "\n".join(errors) + "\n") if errors else ""
-        expect = {"kind": "form", "ok": ok_n, "n": len(fields), "problems": problems,
-                  "submitted": bool(submit) and not errors}
-        return await self._after(ts, before, tabs_before, prefix, expect)
+        exp = {"kind": "form", "ok": ok_n, "n": len(fields), "problems": problems,
+               "submitted": bool(submit) and not any(x.startswith("submit:") for x in errors) and not errors,
+               "form": form_key, "expect": expect, "uncertain": uncertain, "base": base}
+        out = await self._after(ts, before, tabs_before, prefix, exp)
+        if dup and exp["submitted"] and self.last_outcome:
+            self._unsafe_log[dup] = (time.time(), self.last_outcome["status"])
+        return out
 
     async def extract(self, kind: str = "auto", within: int | None = None, fields: list[str] | None = None,
                       new_only: bool = False) -> dict:

@@ -1,0 +1,28 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Checkout</title><link rel="stylesheet" href="/style.css"></head><body><!--NAV-->
+<main><h1>Your basket</h1>
+<p>Masala chai, 250 g — ₹320</p>
+<label>Quantity <input name="qty" id="qty" value="1"></label>
+<button id="place" type="button">Place order</button>
+<button id="slow" type="button">Send message</button>
+<button id="nothing" type="button">Apply coupon</button>
+<details><summary>Delivery options</summary><p>Standard delivery, 3–5 days.</p></details>
+<p id="out" role="status"></p>
+</main><!--FOOTER-->
+<script>
+// Counts every input event that reaches the page, so tests can prove a dry run dispatched nothing.
+window.__events = 0;
+['click', 'mousedown', 'pointerdown', 'keydown', 'input', 'change', 'submit', 'focusin'].forEach(t =>
+  document.addEventListener(t, () => { window.__events++; }, true));
+const out = document.getElementById('out');
+let orders = 0;
+document.getElementById('place').addEventListener('click', async () => {
+  const r = await fetch('/api/submit/order', {method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({qty: document.getElementById('qty').value})});
+  if (r.ok) out.textContent = `Order #${++orders} placed. Confirmation sent to your email.`;
+});
+document.getElementById('slow').addEventListener('click', async () => {
+  out.textContent = '';
+  await fetch('/api/submit/message?delay=7', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'});
+  out.textContent = 'Message sent';
+});
+</script></body></html>

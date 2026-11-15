@@ -254,6 +254,7 @@
     const row = el.closest && el.closest('tr,li,[role=row],article');
     if (row) { const rt = (row.textContent || '').replace(/\s+/g, ' ').trim(); if (rt) fp.ctx = rt.slice(0, 60); }
     fp.lm = landmark(el);
+    if (form && (el.tagName === 'BUTTON' ? /^(submit|)$/i.test(el.getAttribute('type') || '') : el.tagName === 'INPUT' && /^(submit|image)$/i.test((el.getAttribute('type') || '')))) fp.sub = 1;
     e.fp = fp;
     if (el.required || el.hasAttribute('required') || el.getAttribute('aria-required') === 'true') e.req = true;
     if (el.disabled || el.getAttribute('aria-disabled') === 'true') e.disabled = true;
@@ -486,7 +487,7 @@
     }
     const ar = el.getAttribute('role');
     if ((ar && TEXT_ROLES.has(ar)) || el.hasAttribute('aria-live') || (ctx.inDialog && (tag === 'P' || tag === 'LABEL' && !el.querySelector('input,select,textarea')))) {
-      if (visible(el)) { const tx = clip(el.innerText, 160); if (tx) sink.push({ t: 'txt', text: tx }); }
+      if (visible(el)) { const tx = clip(el.innerText, 160); if (tx) sink.push(ar && TEXT_ROLES.has(ar) || el.hasAttribute('aria-live') ? { t: 'txt', text: tx, live: ar || 'live' } : { t: 'txt', text: tx }); }
       if (ar && TEXT_ROLES.has(ar) && !el.querySelector(INTERACTIVE_SEL)) return;
     }
     if (FULL && (tag === 'P' || tag === 'LI' || tag === 'TD' || tag === 'DT' || tag === 'DD' || tag === 'BLOCKQUOTE' || tag === 'FIGCAPTION') && !el.querySelector(INTERACTIVE_SEL)) {

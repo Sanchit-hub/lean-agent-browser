@@ -1,7 +1,7 @@
-"""The 6 agent-facing tools and the LeanBrowser facade behind them.
+"""The 7 agent-facing tools and the LeanBrowser facade behind them.
 
 Tool schemas are deliberately terse: every tool definition is sent with every agent request, so
-schema size is a per-step token cost (budget: <= 800 tokens for all 6, enforced by a test).
+schema size is a per-step token cost (budget: <= 760 proxy tokens for all 7, enforced by a test).
 Longer documentation lives in README.md, not here.
 
     async with LeanBrowser() as lb:
@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from lean_browser.engine import BrowserManager
-from lean_browser.session import OBSCURA_DIALOG_SHIM, ActionError, Session
+from lean_browser.session import OBSCURA_DIALOG_SHIM, ActionError, Session, error_category
 from lean_browser.settle import SETTLE_INIT_JS
 from lean_browser.snapshot import wrap_untrusted
 
@@ -31,23 +31,26 @@ TOOLS: list[dict] = [
      "input_schema": {"type": "object", "properties": {"mode": {"enum": MODES}, "budget": {"type": "integer"},
                                                        "expand": {"type": "string"}, "more": {"type": "string"},
                                                        "find": {"type": "string"}, "within": {"type": "integer"}}}},
-    {"name": "act", "description": "Act on id; returns status + changes. select: option label; tab: list|new:URL|switch:N|close:N; "
-                                   "dialog: accept|dismiss next.",
+    {"name": "act", "description": "Act on id -> status + changes. select: label; tab: list|new:URL|switch:N|close:N; "
+                                   "dialog: accept|dismiss. expect: text|url:X|gone:ID",
      "input_schema": {"type": "object", "properties": {"action": {"enum": ACTIONS}, "id": {"type": "integer"},
-                                                       "value": {"type": "string"}}, "required": ["action"]}},
-    {"name": "fill_form", "description": "Fill {id: value} fields; submit=true submits the form.",
+                                                       "value": {"type": "string"}, "expect": {"type": "string"},
+                                                       "dry_run": {"type": "boolean"}}, "required": ["action"]}},
+    {"name": "fill_form", "description": "Fill {id: value}; submit=true submits. dry_run previews.",
      "input_schema": {"type": "object", "properties": {"fields": {"type": "object", "additionalProperties": {"type": "string"}},
-                                                       "submit": {"type": ["boolean", "integer"]}}, "required": ["fields"]}},
-    {"name": "extract", "description": "JSON of a table/list/form with source and row ids. fields: columns; new_only: skip rows seen.",
+                                                       "submit": {"type": ["boolean", "integer", "string"]},
+                                                       "expect": {"type": "string"}, "dry_run": {"type": "boolean"}},
+                      "required": ["fields"]}},
+    {"name": "extract", "description": "JSON table/list/form with source and row ids. fields: columns; new_only: skip seen rows.",
      "input_schema": {"type": "object", "properties": {"kind": {"enum": ["auto", "table", "list", "form"]},
                                                        "within": {"type": "integer"},
                                                        "fields": {"type": "array", "items": {"type": "string"}},
                                                        "new_only": {"type": "boolean"}}}},
-    {"name": "memory", "description": "Notes kept across pages (source URL added): set, get, list, delete, clear.",
+    {"name": "memory", "description": "Notes kept across pages, with source URL.",
      "input_schema": {"type": "object", "properties": {"action": {"enum": ["set", "get", "list", "delete", "clear"]},
                                                        "key": {"type": "string"}, "value": {"type": "string"}},
                       "required": ["action"]}},
-    {"name": "screenshot", "description": "PNG of viewport or element; annotate labels ids. Visual cases only.",
+    {"name": "screenshot", "description": "PNG of viewport or element; annotate labels ids. Visual only.",
      "input_schema": {"type": "object", "properties": {"id": {"type": "integer"}, "annotate": {"type": "boolean"}}}},
 ]
 TOOL_NAMES = {t["name"] for t in TOOLS}
@@ -82,7 +85,12 @@ class Config:
 
 
 class LeanBrowserError(Exception):
-    """A tool returned an error (bad id, blocked domain, nothing to extract, ...)."""
+    """A tool returned an error (bad id, blocked domain, nothing to extract, ...). `category` is one of
+    blocked, ambiguous, stale, not_found, timeout, network, invalid, engine."""
+
+    def __init__(self, msg: str):
+        super().__init__(msg)
+        self.category = error_category(msg)
 
 
 def _unwrap(text: str) -> str:
@@ -142,12 +150,29 @@ class LeanBrowser:
                 if v is not None}
         return await self._text("snapshot", args)
 
-    async def act(self, action: str, id: int | None = None, value: str | None = None) -> str:
-        args = {k: v for k, v in dict(action=action, id=id, value=value).items() if v is not None}
-        return await self._text("act", args)
+    async def act(self, action: str, id: int | None = None, value: str | None = None, expect: str | None = None,
+                  dry_run: bool = False):
+        """Returns the status + changes text, or with dry_run=True a dict preview (`executed: False`)."""
+        args = {k: v for k, v in dict(action=action, id=id, value=value, expect=expect, dry_run=dry_run or None).items()
+                if v is not None}
+        out = await self._text("act", args)
+        return json.loads(out) if dry_run else out
 
-    async def fill_form(self, fields: dict, submit: bool | int = False) -> str:
-        return await self._text("fill_form", {"fields": {str(k): str(v) for k, v in fields.items()}, "submit": submit})
+    async def fill_form(self, fields: dict, submit: bool | int | str = False, expect: str | None = None,
+                        dry_run: bool = False):
+        args = {"fields": {str(k): str(v) for k, v in fields.items()}, "submit": submit}
+        if expect:
+            args["expect"] = expect
+        if dry_run:
+            args["dry_run"] = True
+        out = await self._text("fill_form", args)
+        return json.loads(out) if dry_run else out
+
+    @property
+    def last_outcome(self) -> dict | None:
+        """Machine-readable outcome of the last act/fill_form: executed, status, evidence, retry_safety,
+        risk, recovery. None after other tools or when the call failed before running."""
+        return self.session.last_outcome
 
     async def extract(self, kind: str = "auto", within: int | None = None, fields: list[str] | None = None,
                       new_only: bool = False) -> dict:
@@ -300,12 +325,14 @@ class LeanBrowser:
                 value = args.get("value")
                 if action == "tab" and str(value or "").startswith("new:"):
                     self._check_domain(str(value)[4:])
-                return [wrap_untrusted(await s.act(action, args.get("id"), value))]
+                return [wrap_untrusted(await s.act(action, args.get("id"), value, expect=args.get("expect"),
+                                                   dry_run=bool(args.get("dry_run", False))))]
             if name == "fill_form":
                 fields = args.get("fields") or {}
                 if isinstance(fields, str):
                     fields = json.loads(fields)
-                return [wrap_untrusted(await s.fill_form(fields, submit=args.get("submit", False)))]
+                return [wrap_untrusted(await s.fill_form(fields, submit=args.get("submit", False), expect=args.get("expect"),
+                                                         dry_run=bool(args.get("dry_run", False))))]
             if name == "extract":
                 data = await s.extract(args.get("kind", "auto"), args.get("within"), args.get("fields"),
                                        bool(args.get("new_only", False)))

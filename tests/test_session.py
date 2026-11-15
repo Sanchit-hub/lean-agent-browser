@@ -52,7 +52,7 @@ async def test_fill_diff_and_inline_errors(s):
     d = await s.act("fill", email, "asha@")
     assert d == f'status: verified (value set)\n~{email}: textbox "Email"* type=email = "asha@"'
     d = await s.act("click", submit)
-    assert d.startswith("status: verified (changes below)")
+    assert d.startswith('status: blocked (page shows errors: Email: "Enter a valid email address"')
     assert f'~{email}: textbox "Email"* type=email = "asha@" !"Enter a valid email address"   (error appeared)' in d
     d = await s.act("fill", pw, "secret-password-1")
     assert "secret-password-1" not in d and "••••" in d
@@ -207,7 +207,7 @@ async def test_status_lines_for_values_and_forms(s):
     out = await s.open(s.base + "/login.html")
     res = await s.fill_form({idof(out, 'textbox "Username"'): "demo", idof(out, 'textbox "Password"'): "demo-pass-123"},
                             submit=True)
-    assert res.startswith("status: verified (2/2 fields set; submitted, page changed: /account)")
+    assert res.startswith("status: verified (2/2 fields set; submitted; page changed: /account; success message")
 
 
 async def test_click_without_effect_is_unverified(s):
