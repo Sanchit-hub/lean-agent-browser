@@ -130,3 +130,50 @@ def test_export_and_delete(tmp_path):
     assert "review it before sharing" in msg and stat.S_IMODE((tmp_path / "out.jsonl").stat().st_mode) == 0o600
     assert trace.delete_runs("a", d) == f"deleted 1 trace(s) from {d}"
     assert trace.delete_runs("all", d) == f"deleted 1 trace(s) from {d}"
+
+
+def test_redact_url_and_sensitive_fields():
+    assert trace.redact_url("https://x.com/cb?code=abc123&state=xyz&page=2#access_token=t0k") == \
+        "https://x.com/cb?code=REDACTED&state=REDACTED&page=2#access_token=REDACTED"
+    assert trace.redact_url("https://x.com/a/b") == "https://x.com/a/b"
+    idx = {1: {"role": "textbox", "name": "Card number"}, 2: {"role": "textbox", "name": "Name"},
+           3: {"role": "textbox", "name": "Code", "fp": {"nm": "otp"}}}
+    a = trace.redact_args("fill_form", {"fields": {"1": "4111111111111111", "2": "Asha", "3": "123456"}}, idx)
+    assert a["fields"] == {"1": "••••", "2": "Asha", "3": "••••"}
+    assert trace.redact_args("open", {"url": "https://x.com/?token=s3cret"}, {})["url"] == "https://x.com/?token=REDACTED"
+
+
+async def test_trace_records_outcome_category_and_no_page_text(base, tmp_path, monkeypatch):
+    monkeypatch.setenv("LEANB_TRACE_DIR", str(tmp_path / "t"))
+    monkeypatch.delenv("LEANB_TRACE_PAGE_TEXT", raising=False)
+    urllib.request.urlopen(base + "/api/reset").read()
+    async with LeanBrowser(Config(allow_private_network=True, trace=True)) as b:
+        out = await b.open(base + "/order.html?session=abc")
+        place = int(out.split(': button "Place order"')[0].rsplit("\n", 1)[1])
+        await b.act("click", place)
+        await b.call("act", {"action": "click", "id": place})  # duplicate -> blocked
+        await b.call("act", {"action": "click", "id": 4242})
+        path = b.tracer.path
+    recs = [json.loads(l) for l in path.read_text().splitlines()]
+    assert recs[0]["args"]["url"].endswith("/order.html?session=REDACTED") and "abc" not in path.read_text()
+    assert recs[0]["result"].startswith("page: Checkout") and "Masala chai" not in recs[0]["result"]
+    assert recs[1]["outcome"]["status"] == "verified" and recs[1]["outcome"]["retry_safety"] == "unsafe"
+    assert recs[1]["step"] == f"{recs[1]['run']}#2"
+    assert recs[2]["category"] == "blocked" and recs[2]["outcome"]["executed"] is False
+    assert recs[3]["category"] == "stale"
+    assert "ERROR:blocked" in trace.show_run("latest", path.parent)
+
+
+async def test_replay_reproduces_a_blocked_submission(base, tmp_path, monkeypatch):
+    """A failure recorded on a local fixture replays to the same outcome (regression reproduction)."""
+    monkeypatch.setenv("LEANB_TRACE_DIR", str(tmp_path / "t"))
+    urllib.request.urlopen(base + "/api/reset").read()
+    async with LeanBrowser(Config(allow_private_network=True, trace=True)) as b:
+        out = await b.open(base + "/signup.html")
+        email = int(out.split(': textbox "Email"')[0].rsplit("\n", 1)[1])
+        btn = int(out.split(': button "Create account"')[0].rsplit("\n", 1)[1])
+        await b.act("fill", email, "not-an-email")
+        assert (await b.act("click", btn)).startswith("status: blocked")
+        path = b.tracer.path
+    out = await trace.replay(path.stem, path.parent)
+    assert "no divergence" in out and "blocked" in out

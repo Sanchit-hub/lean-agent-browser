@@ -737,7 +737,8 @@ class Session:
             got = st["value"] if st["value"] is not None else (st["text"] or "")
             if got == want or (st["text"] is not None and _norm(got) == _norm(want)):
                 return True, "value set"
-            if st["type"] == "password":
+            from lean_browser.trace import _sensitive
+            if st["type"] == "password" or _sensitive(entry or {}):
                 return False, "value differs from what was typed"
             return False, f'value is "{got[:40]}", expected "{want[:40]}"'
         if action == "select":

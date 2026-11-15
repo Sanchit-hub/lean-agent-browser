@@ -1,8 +1,13 @@
 """Traces: one JSONL line per tool call, for debugging agent runs and measuring tool overhead.
 
-Opt-in (`leanb --trace ...`, `trace = true` in config, or LEANB_TRACE=1), because a trace stores page
-text. Files live in ~/.lean-browser/traces/ (folder 700, files 600). Values typed into password
-fields are replaced with "••••".
+Opt-in (`leanb --trace ...`, `trace = true` in config, or LEANB_TRACE=1). Files live in
+~/.lean-browser/traces/ (folder 700, files 600), stay on this machine, and are kept until you delete them
+(`leanb trace delete latest|all|<run>`). Never uploaded anywhere.
+
+Redacted by default: values typed into password fields and into fields that look like card numbers,
+CVVs, one-time codes, PINs, tokens, secrets or ID numbers ("••••"); sensitive URL query parameters
+(token, code, key, session, signature, ... become REDACTED). Each record keeps the status/header lines of the result; full
+page text (up to 4,000 characters) is stored only with trace_page_text = true / LEANB_TRACE_PAGE_TEXT=1.
 
     leanb trace list
     leanb trace show latest
@@ -11,36 +16,79 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import secrets
 import time
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 TRACE_DIR = Path(os.environ.get("LEANB_TRACE_DIR", "~/.lean-browser/traces")).expanduser()
 
 
+MASK = "••••"
+URL_MASK = "REDACTED"
+SENSITIVE_PARAM = re.compile(r"(token|code|key|secret|session|sid|auth|pass|pwd|sig|signature|otp|ticket|"
+                             r"jwt|bearer|credential|state|nonce)", re.I)
+SENSITIVE_FIELD = re.compile(r"(card|cc-?num|ccnum|cvv|cvc|csc|security.?code|otp|one.?time|pin\b|passcode|token|"
+                             r"secret|api.?key|ssn|aadhaar|pan\b|passport|iban|account.?num|routing)", re.I)
+
+
+def redact_url(url: str | None) -> str | None:
+    """Mask the values of sensitive query/fragment parameters; the rest of the URL is kept."""
+    if not url or ("?" not in url and "#" not in url):
+        return url
+    try:
+        u = urlsplit(url)
+        def clean(qs: str) -> str:
+            if "=" not in qs:
+                return qs
+            pairs = parse_qsl(qs, keep_blank_values=True)
+            return urlencode([(k, URL_MASK if SENSITIVE_PARAM.search(k) and v else v) for k, v in pairs])
+        return urlunsplit((u.scheme, u.netloc, u.path, clean(u.query), clean(u.fragment)))
+    except ValueError:
+        return url.split("?", 1)[0]
+
+
+def _brief(body: str) -> str:
+    """Status and header lines only (no page text): enough for show and replay."""
+    keep = []
+    for line in body.splitlines()[:6]:
+        if line.startswith(("status:", "Error:", "page:", "recovered:", "errors:", "dialog ", "+tab", "dry run")) \
+                or line.startswith("{\"executed\""):
+            keep.append(line[:300])
+    return "\n".join(keep) or body.split("\n", 1)[0][:300]
+
+
 class Tracer:
-    def __init__(self, directory: Path | str | None = None):
+    def __init__(self, directory: Path | str | None = None, page_text: bool | None = None):
         self.dir = Path(directory or os.environ.get("LEANB_TRACE_DIR") or TRACE_DIR).expanduser()
         self.dir.mkdir(parents=True, exist_ok=True)
         os.chmod(self.dir, 0o700)
         self.run_id = datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + secrets.token_hex(2)
         self.path = self.dir / f"{self.run_id}.jsonl"
         self.seq = 0
+        self.page_text = bool(os.environ.get("LEANB_TRACE_PAGE_TEXT")) if page_text is None else page_text
 
-    def record(self, tool: str, args: dict, parts: list, started: float, engine: str | None, url: str | None):
+    def record(self, tool: str, args: dict, parts: list, started: float, engine: str | None, url: str | None,
+               outcome: dict | None = None):
+        from lean_browser.session import error_category
         self.seq += 1
         text = next((p for p in parts if isinstance(p, str)), "")
         body = text.removeprefix('<page untrusted="true">\n').removesuffix("\n</page>")
         first = body.split("\n", 1)[0]
+        body = re.sub(r"(url: )(\S+)", lambda m: m.group(1) + (redact_url(m.group(2)) or ""), body)
+        err = text.startswith("Error:")
         rec = {
-            "seq": self.seq, "ts": round(started, 3), "ms": int((time.time() - started) * 1000),
-            "tool": tool, "args": args, "engine": engine, "url": url,
-            "error": text.startswith("Error:"),
+            "run": self.run_id, "seq": self.seq, "step": f"{self.run_id}#{self.seq}",
+            "ts": round(started, 3), "ms": int((time.time() - started) * 1000),
+            "tool": tool, "args": args, "engine": engine, "url": redact_url(url),
+            "error": err, "category": error_category(text[len("Error: "):]) if err else None,
             "status": first.split(" ", 2)[1] if first.startswith("status: ") else None,
             "chars": len(body), "est_tokens": len(body) // 4,
             "image": any(isinstance(p, bytes) for p in parts),
-            "result": body[:4000],
+            "outcome": outcome,
+            "result": body[:4000] if self.page_text else _brief(body),
         }
         new = not self.path.exists()
         with open(self.path, "a") as f:
@@ -49,14 +97,26 @@ class Tracer:
             os.chmod(self.path, 0o600)
 
 
+def _sensitive(e: dict) -> bool:
+    if e.get("type") == "password":
+        return True
+    hay = " ".join(str(x) for x in (e.get("name"), (e.get("fp") or {}).get("nm")) if x)
+    return bool(SENSITIVE_FIELD.search(hay))
+
+
 def redact_args(tool: str, args: dict, index: dict) -> dict:
-    """Copy of args with values for password fields masked (index: snapshot id -> entry)."""
+    """Copy of args with sensitive values masked (index: snapshot id -> entry): password fields, fields
+    that look like card/CVV/OTP/PIN/token/ID numbers, and sensitive URL parameters."""
     a = json.loads(json.dumps(args, default=str))
-    is_pw = lambda i: (index.get(int(i)) or {}).get("type") == "password" if str(i).isdigit() else False
-    if tool == "act" and a.get("action") in ("fill", "press") and a.get("id") is not None and is_pw(a["id"]):
-        a["value"] = "••••"
+    is_s = lambda i: _sensitive(index.get(int(i)) or {}) if str(i).isdigit() else False
+    if tool == "act" and a.get("action") in ("fill", "press") and a.get("id") is not None and is_s(a["id"]):
+        a["value"] = MASK
+    if tool == "act" and a.get("action") == "tab" and str(a.get("value", "")).startswith("new:"):
+        a["value"] = "new:" + (redact_url(a["value"][4:]) or "")
     if tool == "fill_form" and isinstance(a.get("fields"), dict):
-        a["fields"] = {k: ("••••" if is_pw(k) else v) for k, v in a["fields"].items()}
+        a["fields"] = {k: (MASK if is_s(k) else v) for k, v in a["fields"].items()}
+    if tool == "open" and a.get("url"):
+        a["url"] = redact_url(a["url"])
     return a
 
 
@@ -100,11 +160,14 @@ def show_run(run: str = "latest", directory: Path | None = None, full: bool = Fa
     lines = [f"run {p.stem}: {len(recs)} calls, {total_ms / 1000:.1f} s, ~{sum(r['est_tokens'] for r in recs):,} tokens of tool output",
              f"{'#':>3}  {'tool':<10} {'args':<44} {'result':<12} {'engine':<9} {'ms':>6} {'~tok':>6}"]
     for r in recs:
-        res = "ERROR" if r["error"] else (r["status"] or ("image" if r["image"] else "ok"))
+        res = (f"ERROR:{r['category']}" if r.get("category") else "ERROR") if r["error"] else (r["status"] or ("image" if r["image"] else "ok"))
         lines.append(f"{r['seq']:>3}  {r['tool']:<10} {_summ(r['tool'], r['args'])[:44]:<44} {res:<12} "
                      f"{(r['engine'] or '-'):<9} {r['ms']:>6} {r['est_tokens']:>6}")
         if full or r["error"]:
             lines += ["       " + l for l in r["result"].splitlines()[:12]]
+        o = r.get("outcome") or {}
+        if o.get("recovery") and (full or o.get("status") != "verified"):
+            lines += ["       recovery: " + x for x in o["recovery"]]
     return "\n".join(lines)
 
 
@@ -157,7 +220,7 @@ async def replay(run: str = "latest", directory: Path | None = None, allow_actio
         for r in recs:
             tool, args = r["tool"], r["args"]
             rec_out = "error" if r["error"] else _outcome(r["result"])
-            if "••••" in json.dumps(args, ensure_ascii=False):
+            if MASK in json.dumps(args, ensure_ascii=False) or "=" + URL_MASK in json.dumps(args):
                 lines.append(f"{r['seq']:>3}  {tool:<10} {rec_out[:26]:<26} {'-':<26} skipped (redacted value)")
                 continue
             if not full and tool not in READ_ONLY_TOOLS:

@@ -73,6 +73,7 @@ class Config:
     block: bool = True
     confirm_risky: bool = False         # require act(..., value="confirm") for pay/delete/send-like buttons
     trace: bool = False                 # write a JSONL trace of every tool call to ~/.lean-browser/traces
+    trace_page_text: bool = False       # also keep page text (up to 4,000 chars) in each trace record
     snapshot_timeout_s: float = 2.0
     nav_timeout_ms: int = 20000
 
@@ -122,7 +123,7 @@ class LeanBrowser:
         self.tracer = None
         if c.trace or os.environ.get("LEANB_TRACE"):
             from lean_browser.trace import Tracer
-            self.tracer = Tracer()
+            self.tracer = Tracer(page_text=c.trace_page_text or None)
 
     async def __aenter__(self):
         await self.bm.start()
@@ -300,11 +301,13 @@ class LeanBrowser:
         idx = _index(s.cur.snapper.last) if s.active >= 0 else {}
         safe = redact_args(name, dict(args or {}), idx)
         t0 = time.time()
+        if name in ("act", "fill_form"):
+            s.last_outcome = None
         parts = await self._call(name, args)
         eng = url = None
         if s.active >= 0:
             eng, url = s.cur.tab.engine, s.cur.page.url
-        self.tracer.record(name, safe, parts, t0, eng, url)
+        self.tracer.record(name, safe, parts, t0, eng, url, s.last_outcome if name in ("act", "fill_form") else None)
         return parts
 
     async def _call(self, name: str, args: dict | None) -> list:
