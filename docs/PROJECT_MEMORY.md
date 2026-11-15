@@ -1,7 +1,7 @@
 # Project memory: Lean Agent Browser
 
 A living record of what this project is, what has been decided, and what is on this Mac.
-Update it whenever something important changes. Last updated: 2026-11-15 (night).
+Update it whenever something important changes. Last updated: 2026-11-15 (after the updated-roadmap pass).
 
 ## What we're building
 A token-lean browser for AI agents. Pages come back as compact text with numeric ids, and actions
@@ -25,6 +25,15 @@ with Chromium as the fallback. It is exposed as an MCP server, a CLI (`leanb`) a
 - **Snapshot speed on Obscura:** GitHub repo page ~90 ms, after switching to `checkVisibility()`.
 - **Live suite** (5 public pages, 1 run each): Playwright MCP 5/5 with 134.6k tokens, lean 5/5 with
   49.4k tokens. Lean's Halley task first hung; that was fixed, see below.
+
+## Since the November 2026 updated roadmap
+- **Obscura 0.2.7 is now the default**, after a controlled evaluation: the full suite passed on 0.2.6 and
+  0.2.7, and the compatibility matrix is in `docs/engines.md`. 0.2.7 fixes the Wikipedia hang, iframe
+  locators and `table.rows`.
+- **Recovery** now checks a fingerprint, so a same-named control is never clicked by mistake.
+- **`LeanBrowser.context()`** gives task-aware, sourced records with explicit missing and conflicting fields.
+- **`leanb trace replay / export / delete`** were added.
+- **Cross-platform (P0 in the review) was skipped** on purpose: the user chose macOS-only.
 
 ## Decisions (and why)
 - **macOS (Apple Silicon) only** for now. This was the user's choice.

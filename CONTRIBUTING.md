@@ -6,7 +6,7 @@ Thanks for helping. This page covers everything you need to make a change and ge
 
 ```bash
 ./install.sh                     # .venv, pinned + checksummed Obscura, Chromium, self-check
-.venv/bin/python -m pytest -q    # ~135 tests, about 90 s; uses a local fixture site, both engines
+.venv/bin/python -m pytest -q    # 181 passed, 1 skipped (2026-11-15), about 3 min; local fixture site, both engines
 ```
 
 ## Where things live

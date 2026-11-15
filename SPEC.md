@@ -348,11 +348,12 @@ fixture server.
 
 ---
 
-## Tools (MCP): 6 tools only
+## Tools (MCP): 7 tools
 
 Every tool schema costs tokens on every request, so the set stays small. Keep descriptions
-to one short sentence each. The eval measures schema size, and the target is **≤ 800 tokens
-for all 6 tool definitions together**. Explain `act`'s actions in one enum with no per-value
+to one short sentence each. The original target was **≤ 800 tokens for all definitions together**.
+Measured reality as of 2026-11-15: ~1,550 Claude tokens for 7 tools, including the API's own
+tool-use overhead (see below). Explain `act`'s actions in one enum with no per-value
 prose. The README holds the long documentation.
 
 #### Implementation status (steps 5–6, 2026-11-14)
@@ -380,12 +381,13 @@ prose. The README holds the long documentation.
 
 | Tool | Signature | Returns |
 |---|---|---|
-| `open` | `open(url, mode="actions", tab=None, block=True)` | snapshot |
+| `open` | `open(url, mode="actions", block=True)`; modes: minimal, actions, read, full | snapshot |
 | `snapshot` | `snapshot(mode="actions", budget=None, expand=None, more=None, find=None, within=None)` | snapshot, expanded group, next chunk, or IDs that match `find` |
-| `act` | `act(action, id=None, value=None)` | diff |
-| `fill_form` | `fill_form(fields: {id: value}, submit: id \| bool = False)` | diff, or result page snapshot after submit |
-| `extract` | `extract(kind="auto" \| "table" \| "list" \| "form", within=None)` | JSON |
-| `screenshot` | `screenshot(id=None)` | PNG (element crop, or viewport) |
+| `act` | `act(action, id=None, value=None)` | status line (verified / unverified / timed_out / done) + diff |
+| `fill_form` | `fill_form(fields: {id: value}, submit: id \| bool = False)` | status (`k/n fields set; submitted, …`) + diff, or the new page |
+| `extract` | `extract(kind="auto" \| "table" \| "list" \| "form", within=None, fields=None, new_only=False)` | JSON with provenance; list items carry `fields`, `missing`, `conflicts` |
+| `memory` | `memory(action="set" \| "get" \| "list" \| "delete" \| "clear", key=None, value=None)` | session notes with source URL |
+| `screenshot` | `screenshot(id=None, annotate=False)` | PNG (element crop or viewport; annotate draws ids) |
 
 `act` actions:
 

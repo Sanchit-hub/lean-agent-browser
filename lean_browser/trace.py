@@ -189,7 +189,8 @@ def export_run(run: str, out: Path, directory: Path | None = None) -> str:
 
 def delete_runs(run: str, directory: Path | None = None) -> str:
     directory = Path(directory or TRACE_DIR)
-    targets = _runs(directory) if run == "all" else [directory / f"{run}.jsonl"]
+    runs = _runs(directory)
+    targets = runs if run == "all" else (runs[-1:] if run == "latest" else [directory / f"{run}.jsonl"])
     n = 0
     for p in targets:
         if p.exists():

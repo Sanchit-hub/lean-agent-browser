@@ -204,7 +204,7 @@ export ANTHROPIC_API_KEY=...
 ## Development
 
 ```bash
-.venv/bin/python -m pytest -q        # ~135 tests; uses the local fixture site, both engines
+.venv/bin/python -m pytest -q        # 181 passed, 1 skipped on 2026-11-15 (macOS arm64); local fixture site, both engines
 .venv/bin/python scripts/snap.py login.html,orders.html obscura    # look at snapshots
 ```
 
