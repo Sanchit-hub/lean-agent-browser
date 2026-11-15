@@ -30,7 +30,7 @@ with Chromium as the fallback. It is exposed as an MCP server, a CLI (`leanb`) a
 - **macOS (Apple Silicon) only** for now. This was the user's choice.
 - **Commits carry the user's name only:** the GitHub noreply email, and no Claude co-author trailer.
 - **Work autonomously:** commit and push after each step, and pick details yourself.
-- **Obscura is pinned to 0.2.6 and hash-checked on every launch.** The binary is only ad-hoc signed,
+- **Obscura is pinned (0.2.7, 0.2.6 for rollback) and hash-checked on every launch.** The binary is only ad-hoc signed,
   so it always runs under `sandbox-exec`.
 - **Pages with file inputs, rich-text editors or cross-origin iframes go to Chromium.** Obscura drops
   files without any error, ignores typing in editors, and can't read cross-origin frames.
@@ -43,7 +43,7 @@ with Chromium as the fallback. It is exposed as an MCP server, a CLI (`leanb`) a
 |---|---|
 | `~/Desktop/lean/` | The repo (GitHub: Sanchit-hub/lean-agent-browser, private) |
 | `~/Desktop/lean/.venv/` | Python env (`pip install -e ".[dev]"`) |
-| `~/.lean-browser/bin/obscura`, `obscura-worker` | Obscura 0.2.6. Release SHA256 `19faa248…bd0`; binary hashes are in `engine.py` |
+| `~/.lean-browser/bin/obscura`, `obscura-worker` | Obscura 0.2.7 (default since 2026-11-15; 0.2.6 hashes kept for rollback). Hashes are in `engine.py`; see `docs/engines.md` |
 | `~/.lean-browser/pw-browsers/` | Playwright Chromium (Chrome for Testing) |
 | `~/.lean-browser/traces/` | Traces from `leanb --trace` (dir 700, files 600) |
 | `~/Desktop/lean/.vendor/` | Spike copy of Obscura, Playwright MCP 0.0.83, agent-browser 0.41.0 (eval baselines) |

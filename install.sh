@@ -7,9 +7,9 @@
 # Safe to re-run. Nothing is installed outside this folder and ~/.lean-browser/.
 set -euo pipefail
 
-OBSCURA_VERSION="0.2.6"
+OBSCURA_VERSION="0.2.7"
 OBSCURA_TARBALL="obscura-aarch64-macos.tar.gz"
-OBSCURA_SHA256="19faa248ac762f466ddb822dbb03ed4f097312d10d1a4d5b2143e6040a9bebd0"
+OBSCURA_SHA256="fc7e73f23058f18d6d5be983d83b24ba374d12167677657a307a9476c0f5a7c1"
 PLAYWRIGHT_MCP_VERSION="0.0.83"
 AGENT_BROWSER_VERSION="0.41.0"
 

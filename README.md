@@ -87,7 +87,7 @@ agent ──MCP / CLI / Python──▶  6 tools  ──▶  snapshot · act · 
 - **macOS on Apple Silicon only** for now. The Obscura sandbox uses macOS `sandbox-exec`.
 - The benchmark compares against one baseline (Playwright MCP) on 18 tasks we wrote ourselves. It is a
   promising result, not proof against every browser agent.
-- Obscura 0.2.6 can't upload files, type into rich-text editors, open popups or read cross-origin
+- Obscura 0.2.7 can't upload files, type into rich-text editors, open popups or read cross-origin
   iframes. Those pages run on Chromium automatically.
 
 See [`ROADMAP.md`](ROADMAP.md) for what's next.
@@ -96,7 +96,7 @@ See [`ROADMAP.md`](ROADMAP.md) for what's next.
 
 `./install.sh`:
 - creates `.venv/` with pinned Python dependencies
-- downloads **Obscura 0.2.6** and checks its SHA256 against a pinned value
+- downloads **Obscura 0.2.7** and checks its SHA256 against a pinned value
 - installs the Obscura binaries to `~/.lean-browser/bin/` and re-checks their hashes
 - installs Playwright's Chromium to `~/.lean-browser/pw-browsers/`
 - runs `leanb doctor` to check everything works
@@ -148,7 +148,7 @@ snapshot_timeout_s = 2.0            # slower snapshots move the page to Chromium
 
 ## Security model
 
-- **Obscura is pinned and verified.** Obscura 0.2.6 is pinned, and the SHA256 of both binaries is
+- **Obscura is pinned and verified.** Obscura 0.2.7 is pinned, and the SHA256 of both binaries is
   re-checked on every launch. The binary is only ad-hoc signed, so it **always runs under macOS
   `sandbox-exec`**: it can't read your home folder (except its own), can only write to its own temp
   dir, and only accepts connections on localhost. Its CDP port is bound to 127.0.0.1 and needs a

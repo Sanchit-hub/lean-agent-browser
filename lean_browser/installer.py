@@ -1,6 +1,6 @@
 """`leanb install`: fetch the engines for a pip install (the same steps install.sh runs for a checkout).
 
-- Obscura 0.2.6 for macOS arm64: download, check the release SHA256, extract to ~/.lean-browser/bin,
+- Obscura (pinned version, see engine.DEFAULT_OBSCURA_VERSION) for macOS arm64: download, check the release SHA256, extract to ~/.lean-browser/bin,
   check both binaries' pinned hashes, clear the quarantine flag.
 - Playwright's Chromium into ~/.lean-browser/pw-browsers.
 Safe to re-run: verified pieces are skipped.
@@ -18,10 +18,10 @@ import tempfile
 import urllib.request
 from pathlib import Path
 
-from lean_browser.engine import OBSCURA_VERSION, EngineError, verify_obscura
+from lean_browser.engine import OBSCURA_RELEASE_SHA256, OBSCURA_VERSION, EngineError, verify_obscura
 
 TARBALL = "obscura-aarch64-macos.tar.gz"
-TARBALL_SHA256 = "19faa248ac762f466ddb822dbb03ed4f097312d10d1a4d5b2143e6040a9bebd0"
+TARBALL_SHA256 = OBSCURA_RELEASE_SHA256[OBSCURA_VERSION]
 URL = f"https://github.com/h4ckf0r0day/obscura/releases/download/v{OBSCURA_VERSION}/{TARBALL}"
 HOME = Path.home() / ".lean-browser"
 BIN = HOME / "bin"

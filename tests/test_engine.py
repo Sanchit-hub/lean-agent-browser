@@ -168,7 +168,7 @@ def test_install_script_syntax():
     root = Path(__file__).resolve().parent.parent
     assert subprocess.run(["bash", "-n", str(root / "install.sh")]).returncode == 0
     text = (root / "install.sh").read_text()
-    assert eng.OBSCURA_VERSION in text and "19faa248ac762f466ddb822dbb03ed4f097312d10d1a4d5b2143e6040a9bebd0" in text
+    assert eng.DEFAULT_OBSCURA_VERSION in text and eng.OBSCURA_RELEASE_SHA256[eng.DEFAULT_OBSCURA_VERSION] in text
     assert "--ignore-scripts" in text
 
 

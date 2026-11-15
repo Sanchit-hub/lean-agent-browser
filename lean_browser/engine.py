@@ -25,18 +25,36 @@ from playwright.async_api import Browser, BrowserContext, Page, Playwright, asyn
 
 log = logging.getLogger("lean_browser.engine")
 
-OBSCURA_VERSION = "0.2.6"
-# SHA256 of the extracted binaries from obscura-aarch64-macos.tar.gz (release digest
-# 19faa248ac762f466ddb822dbb03ed4f097312d10d1a4d5b2143e6040a9bebd0), verified 2026-11-14.
-OBSCURA_SHA256 = {
-    "obscura": "2690b133d1c46b40473e0de31cea53757b5283f5caa8911f738bbb1ac8db036d",
-    "obscura-worker": "7b2e6e0234283b5a18ed03649adcf66aefe90ef43ed3817241e47b63ad59c5a5",
+# Pinned, verified Obscura releases (SHA256 of the extracted macOS arm64 binaries). The default stays on
+# the version that passed the full suite; others can be tried with LEANB_OBSCURA_VERSION=<version>.
+OBSCURA_HASHES = {
+    "0.2.6": {  # release digest 19faa248…bd0, verified 2026-11-14
+        "obscura": "2690b133d1c46b40473e0de31cea53757b5283f5caa8911f738bbb1ac8db036d",
+        "obscura-worker": "7b2e6e0234283b5a18ed03649adcf66aefe90ef43ed3817241e47b63ad59c5a5",
+    },
+    "0.2.7": {  # release digest fc7e73f2…7c1, verified 2026-11-15
+        "obscura": "d09acc26fb1c5b0ea2ef297f55ea2430f765395d8cfd2eda78fcb50458153195",
+        "obscura-worker": "241bc00417865ff34436e16c8c186ff67b1c28b4226f929e2ad556a3f3265c88",
+    },
 }
+DEFAULT_OBSCURA_VERSION = "0.2.7"  # 0.2.6 kept for rollback (LEANB_OBSCURA_VERSION=0.2.6)
+# SHA256 of the release archive obscura-aarch64-macos.tar.gz per version (from GitHub's asset digests)
+OBSCURA_RELEASE_SHA256 = {
+    "0.2.6": "19faa248ac762f466ddb822dbb03ed4f097312d10d1a4d5b2143e6040a9bebd0",
+    "0.2.7": "fc7e73f23058f18d6d5be983d83b24ba374d12167677657a307a9476c0f5a7c1",
+}
+OBSCURA_VERSION = os.environ.get("LEANB_OBSCURA_VERSION", DEFAULT_OBSCURA_VERSION)
+if OBSCURA_VERSION not in OBSCURA_HASHES:
+    raise RuntimeError(f"unknown LEANB_OBSCURA_VERSION {OBSCURA_VERSION!r}; pinned: {', '.join(OBSCURA_HASHES)}")
+OBSCURA_SHA256 = OBSCURA_HASHES[OBSCURA_VERSION]
 _REPO = Path(__file__).resolve().parent.parent
+_VENDOR = _REPO / f".vendor/obscura-v{OBSCURA_VERSION}/bin/obscura"
+_HOME_BIN = Path.home() / ".lean-browser/bin/obscura"
 OBSCURA_SEARCH = [
     Path(os.environ["LEANB_OBSCURA"]) if os.environ.get("LEANB_OBSCURA") else None,
-    Path.home() / ".lean-browser/bin/obscura",
-    _REPO / f".vendor/obscura-v{OBSCURA_VERSION}/bin/obscura",
+    # ~/.lean-browser holds the default version (install.sh / leanb install); other versions live in .vendor
+    _HOME_BIN if OBSCURA_VERSION == DEFAULT_OBSCURA_VERSION else _VENDOR,
+    _VENDOR if OBSCURA_VERSION == DEFAULT_OBSCURA_VERSION else None,
 ]
 
 # JS probe run after navigation on Obscura. Each key maps to a spike-verified failure.
