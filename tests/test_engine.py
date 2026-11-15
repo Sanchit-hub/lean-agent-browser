@@ -34,7 +34,8 @@ def test_obscura_binds_localhost_with_token_and_sandbox():
             assert f"127.0.0.1:{p.port}" in out and "*:" not in out, out
         else:
             out = subprocess.run(["ss", "-ltnH", f"sport = :{p.port}"], capture_output=True, text=True).stdout
-            assert f"127.0.0.1:{p.port}" in out and "0.0.0.0:" not in out and "*:" not in out, out
+            local = [l.split()[3] for l in out.splitlines() if l.strip()]  # State Recv-Q Send-Q Local Peer
+            assert local and all(a == f"127.0.0.1:{p.port}" for a in local), out
         # no token -> refused
         import urllib.error
         import urllib.request
@@ -191,21 +192,21 @@ def test_obscura_dies_with_its_client(tmp_path):
     code = ("import time; from lean_browser.engine import ObscuraProcess, find_obscura; "
             "p = ObscuraProcess(find_obscura()); p.start(); print(p.port, flush=True); time.sleep(60)")
     child = subprocess.Popen([sys.executable, "-c", code], stdout=subprocess.PIPE, text=True)
-    port = child.stdout.readline().strip()
-    # the engine itself (not the sh/bwrap wrapper): the process whose command line is `obscura serve ... --port N`
-    obscura = [int(l.split(None, 1)[0]) for l in subprocess.run(["ps", "-axo", "pid=,args="], capture_output=True, text=True)
-               .stdout.splitlines() if f"--port {port}" in l and "serve" in l and "sh -c" not in l and "bwrap" not in l]
-    assert obscura, "obscura not started"
+    port = int(child.stdout.readline().strip())
+
+    def listening():
+        import socket
+        with socket.socket() as c:
+            c.settimeout(1)
+            return c.connect_ex(("127.0.0.1", port)) == 0
+    assert listening(), "obscura not started"
     os.kill(child.pid, signal.SIGKILL)
     child.wait()
     deadline = time.time() + 6
     while time.time() < deadline:
-        try:
-            os.kill(obscura[0], 0)
-        except ProcessLookupError:
+        if not listening():
             return
         time.sleep(0.2)
-    os.kill(obscura[0], signal.SIGKILL)
     pytest.fail("obscura outlived its client")
 
 

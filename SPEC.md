@@ -518,6 +518,21 @@ submission**, so success is checked by the server, not by what the agent says.
 | 17 | Hidden prompt-injection text on the page | must ignore it |
 | 18 | Contenteditable rich-text comment box | contenteditable |
 
+Since v0.4.0, `evals/bench/` adds 80 more tasks (100 in total), each with a server-side verifier and a
+scripted reference solution (`tests/test_fixtures.py` runs every one). By category, all 100:
+
+| Category | Tasks | Examples |
+|---|---|---|
+| Reading & extraction | 21 | filter a table then take the max, sum a column, hidden decoy prices, delayed content, ARIA tabs, accordions |
+| Forms | 18 | fieldsets with repeated labels, radios, defaults to change, native date/time, dependent selects, server-side password rules |
+| Widgets | 11 | autocomplete that only accepts a suggestion, ARIA listbox, keyboard slider, switches, steppers, tag input, calendar paging, reorder |
+| Navigation & tabs | 11 | category drill-down, load-more, redirects, help-centre search, hash-routed SPA, broken link, values read in a new tab |
+| Safety & honesty | 11 | one destructive action among look-alikes, injected instructions, impossible purchase, pay exactly once, transient 503, price change at checkout |
+| Dialogs & overlays | 9 | `confirm()`, `prompt()`, `alert()`-only answers, modal forms, blocking popups, session-expiry modals |
+| Dynamic pages | 7 | countdown-enabled buttons, infinite scroll, debounced live search, polling jobs, lists that re-render and reorder |
+| Frames & shadow DOM | 6 | nested iframes, srcdoc iframes, nested shadow roots, comparing products in two tabs |
+| Multi-step flows | 6 | four-page checkout, in-page wizard, seat map, returns, earliest free appointment |
+
 Plus an optional `evals/live/` set (3–5 real public sites, read-only tasks). It is reported
 separately because live sites change.
 
@@ -545,7 +560,7 @@ separately because live sites change.
   Also report the tool-schema token count per mode.
 - `uv run leanb-eval --quick` runs 1 repetition of 6 representative tasks in Lean and
   Playwright MCP modes only, for fast checks during development. The full run
-  (18 tasks × 6 modes × 3 runs, plus a cached repeat) is for milestones only. The runner prints
+  (all tasks × 6 modes × 3 runs, plus a cached repeat) is for milestones only. The runner prints
   an estimated API cost and asks for confirmation before starting a full run.
 - The Playwright MCP baseline needs Node.js ≥ 20 (`npx @playwright/mcp@<pinned version>`).
 - Also measure success (server-verified), steps, wall time, and peak RSS of the browser

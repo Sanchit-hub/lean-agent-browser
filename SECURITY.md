@@ -8,9 +8,14 @@ impact. Expect a first reply within a week.
 
 ## What the project protects against
 
-- **The Obscura binary.** It is pinned to a version and SHA256, and re-verified before every launch.
-  It runs under macOS `sandbox-exec`: no reads of your home folder (except its own), writes only to its
-  temp dir, and inbound connections only on localhost. Its CDP port needs a random per-launch token.
+- **The Obscura binary.** It is pinned to a version and SHA256 per platform, and re-verified before every
+  launch. It never runs unsandboxed. Its CDP port listens on 127.0.0.1 only and needs a random per-launch token.
+  - **macOS:** `sandbox-exec`: no reads of your home folder (except its own), writes only to its temp dir,
+    inbound connections only on localhost.
+  - **Linux:** bubblewrap (`bwrap`): a fresh mount namespace where the home folder does not exist, system
+    folders are read-only, and only its temp dir is writable; its own user, PID, IPC and UTS namespaces;
+    it dies with its client. The network is shared so it can browse. Without `bwrap` installed, Obscura is
+    disabled and Chromium serves every page.
 - **Private networks.** localhost, LAN and cloud-metadata addresses are blocked on **both** engines
   unless you set `allow_private_network`. Hostnames that resolve to those addresses are blocked too.
 - **Prompt injection from pages.** Page content is wrapped in `<page untrusted="true">`, and hidden text
@@ -39,5 +44,7 @@ impact. Expect a first reply within a week.
 ## Known limits
 
 - The sandbox only applies to Obscura. Chromium is Playwright's bundled build with a throwaway profile.
+- On Linux, bubblewrap can't restrict which ports Obscura connects out to (macOS can, for `localhost_only`).
+  The private-network block still applies on both engines.
 - Visible text written to manipulate agents still reaches the agent, inside the untrusted wrapper.
-- Only macOS (Apple Silicon) is supported and tested.
+- Supported and tested in CI: macOS 15 on Apple Silicon, Ubuntu 24.04 on x86_64 and arm64. No Windows.

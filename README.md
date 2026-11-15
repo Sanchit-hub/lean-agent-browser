@@ -1,7 +1,7 @@
 # Lean Agent Browser
 
 [![CI](https://github.com/Sanchit-hub/lean-agent-browser/actions/workflows/ci.yml/badge.svg)](https://github.com/Sanchit-hub/lean-agent-browser/actions/workflows/ci.yml)
-![platform](https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)-lightgrey)
+![platform](https://img.shields.io/badge/platform-macOS%20arm64%20%7C%20Linux%20x86__64%2Farm64-lightgrey)
 ![license](https://img.shields.io/badge/license-Apache--2.0-blue)
 
 **Lean Agent Browser is a reliable execution layer for AI agents on the web: compact context, actions
@@ -65,11 +65,12 @@ A click being sent is not the same as the task succeeding. Every `act` and `fill
 - From Python, `browser.last_outcome` has the same result as a dict (`status`, `evidence`,
   `retry_safety`, `recovery`), and `LeanBrowserError.category` classifies errors.
 
-## Quickstart (macOS, Apple Silicon)
+## Quickstart (macOS on Apple Silicon, or Linux)
 
 ```bash
 git clone https://github.com/Sanchit-hub/lean-agent-browser && cd lean-agent-browser
 ./install.sh                                         # pinned, checksummed Obscura + Chromium, then a self-check
+# Linux: sudo apt install bubblewrap (Obscura's sandbox) and, once, sudo .venv/bin/python -m playwright install-deps chromium
 .venv/bin/leanb open https://news.ycombinator.com/   # print a snapshot
 ```
 
@@ -104,7 +105,8 @@ comparison done in your code).
 ```
 agent ──MCP / CLI / Python──▶  7 tools  ──▶  snapshot · act · diff · settle  ──▶  Obscura (default, ~3× less memory)
                                                                              └─▶  Chromium (file uploads, rich-text
-                                                                                  editors, cross-origin iframes, failures)
+                                                                                  editors, cross-origin, srcdoc and
+                                                                                  nested iframes, failures)
 ```
 
 - **Compact snapshots.** One line per interactive element, each with a stable id. Navigation, footers
@@ -116,18 +118,17 @@ agent ──MCP / CLI / Python──▶  7 tools  ──▶  snapshot · act · 
 
 ## Limitations
 
-- **macOS on Apple Silicon only** for now. The Obscura sandbox uses macOS `sandbox-exec`.
-- **Supported:** macOS 15+ on Apple Silicon (arm64). No Linux or Windows support or claims.
-- The benchmark covers 18 tasks we wrote ourselves (3 runs per tool, agent-browser 1 run), well short of
-  a 100-task suite. It is a promising result, not proof against every browser agent. See
-  [`docs/benchmark.md`](docs/benchmark.md).
+- **Supported (tested in CI):** macOS 15+ on Apple Silicon, and Ubuntu 24.04 on x86_64 and arm64. No Windows.
+  On Linux, Obscura runs only under bubblewrap; without it, Chromium serves every page.
+- The benchmark is 100 fixture tasks we wrote ourselves, on a local test site. It measures these tasks, not
+  every website, and it is not proof against every browser agent. See [`docs/benchmark.md`](docs/benchmark.md).
 - Verification is heuristic: success and error words are English-only, and a site that shows neither
   stays `unverified`. Pass `expect=` when it matters.
 - The duplicate guard is per session and per page. It can't see side effects from another session.
 - A dry run reflects the page at that moment; the page can change before you execute.
-- The v0.3.0 release candidate has not yet been tested by outside developers.
-- Obscura 0.2.7 can't upload files, type into rich-text editors, open popups or read cross-origin
-  iframes. Those pages run on Chromium automatically.
+- This release has not yet been tested by outside developers.
+- Obscura 0.2.7 can't upload files, type into rich-text editors, open popups, read cross-origin iframes,
+  run scripts in srcdoc iframes or reach nested iframes. Those pages run on Chromium automatically.
 
 See [`ROADMAP.md`](ROADMAP.md) for what's next.
 
@@ -190,9 +191,9 @@ snapshot_timeout_s = 2.0            # slower snapshots move the page to Chromium
 ## Security model
 
 - **Obscura is pinned and verified.** Obscura 0.2.7 is pinned, and the SHA256 of both binaries is
-  re-checked on every launch. The binary is only ad-hoc signed, so it **always runs under macOS
-  `sandbox-exec`**: it can't read your home folder (except its own), can only write to its own temp
-  dir, and only accepts connections on localhost. Its CDP port is bound to 127.0.0.1 and needs a
+  re-checked on every launch. It **always runs sandboxed**: macOS `sandbox-exec`, or bubblewrap on
+  Linux. It can't read your home folder, can only write to its own temp dir, and its CDP server only
+  listens on localhost. Its CDP port is bound to 127.0.0.1 and needs a
   random 32-byte token per launch.
 - **Chromium never touches your profile.** It is Playwright's bundled build with a throwaway
   profile, not your own Chrome.
@@ -221,7 +222,8 @@ under test is attached, and the system prompt is our own:
 
 ```bash
 .venv/bin/python -m evals.claude_driver --quick      # 6 tasks: Playwright MCP vs lean
-.venv/bin/python -m evals.claude_driver --runs 3     # all 20 tasks x 2 modes x 3 runs
+.venv/bin/python -m evals.claude_driver --runs 3 --jobs 5   # all 100 tasks x 2 modes x 3 runs, 5 at a time
+.venv/bin/python -m evals.claude_driver --tags safety       # one category
 ```
 
 **With an API key** (in your environment, or in the gitignored, `chmod 600` file `.env`):
@@ -230,7 +232,7 @@ under test is attached, and the system prompt is our own:
 export ANTHROPIC_API_KEY=...
 .venv/bin/leanb-eval --estimate          # cost before anything runs
 .venv/bin/leanb-eval --quick             # 6 tasks, Playwright MCP vs lean, 1 run (~$1)
-.venv/bin/leanb-eval -y                  # 18 tasks × 6 modes × 3 runs
+.venv/bin/leanb-eval -y                  # all tasks × 6 modes × 3 runs (costly: check --estimate first)
 .venv/bin/leanb-eval --schema-tokens     # exact tool-definition tokens per mode
 ```
 

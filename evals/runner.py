@@ -3,7 +3,7 @@ total tokens, server-verified success, steps, time and browser memory.
 
 Usage:
   leanb-eval --quick                       # 6 tasks, 1 run, aria + html (fast check)
-  leanb-eval --modes screenshot,html,aria  # all 18 tasks, runs from config.toml
+  leanb-eval --modes screenshot,html,aria  # all tasks, runs from config.toml
   leanb-eval --estimate                    # print the cost estimate and exit
   leanb-eval --schema-tokens               # count tool-definition tokens per mode and exit
 

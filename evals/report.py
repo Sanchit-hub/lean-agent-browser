@@ -36,6 +36,44 @@ def failure_category(r: dict) -> str | None:
     return "other"
 
 
+GROUPS = {"form": "forms", "multi-step": "multi-step flows", "extract": "reading & extraction", "read": "reading & extraction",
+          "pagination": "reading & extraction", "scroll": "reading & extraction", "navigate": "navigation & tabs",
+          "tabs": "navigation & tabs", "widget": "widgets", "custom-widget": "widgets", "contenteditable": "widgets",
+          "dialog": "dialogs & overlays", "modal": "dialogs & overlays", "overlay": "dialogs & overlays",
+          "banner": "dialogs & overlays", "iframe": "frames & shadow DOM", "shadow-dom": "frames & shadow DOM",
+          "dynamic": "dynamic pages", "spa": "dynamic pages", "safety": "safety & honesty",
+          "reliability": "safety & honesty", "security": "safety & honesty"}
+
+
+def category_of(task_id: str) -> str:
+    """The task's category, from its first tag in evals.tasks (forms, widgets, safety & honesty, ...)."""
+    try:
+        from evals.tasks import BY_ID
+        t = BY_ID.get(task_id)
+        return GROUPS.get(t.tags[0], t.tags[0]) if t and t.tags else "other"
+    except Exception:
+        return "other"
+
+
+def _category_table(rs: list[dict], modes: list[str], tasks: list[str], title: str) -> list[str]:
+    """Success by task category, plus pass^k: tasks solved in every run (consistency, not just luck)."""
+    cats = defaultdict(list)
+    for t in tasks:
+        cats[category_of(t)].append(t)
+    if len(cats) < 2:
+        return []
+    out = [f"### By category — {title}", "", "| Category | Tasks | " + " | ".join(f"{m} runs | {m} all runs" for m in modes) + " |",
+           "|---|---|" + "---|---|" * len(modes)]
+    for c in sorted(cats, key=lambda c: (-len(cats[c]), c)):
+        cells = []
+        for m in modes:
+            xs = [r for r in rs if r["mode"] == m and r["task"] in cats[c]]
+            solid = sum(all(r["success"] for r in xs if r["task"] == t) and any(r["task"] == t for r in xs) for t in cats[c])
+            cells.append(f"{sum(r['success'] for r in xs)}/{len(xs)} | {solid}/{len(cats[c])}")
+        out.append(f"| {c} | {len(cats[c])} | " + " | ".join(cells) + " |")
+    return out + [""]
+
+
 def write_report(out_dir: Path) -> Path:
     meta = json.loads((out_dir / "meta.json").read_text())
     runs = [json.loads(l) for l in (out_dir / "runs.jsonl").read_text().splitlines() if l.strip()]
@@ -63,6 +101,7 @@ def write_report(out_dir: Path) -> Path:
 
         tasks = list(dict.fromkeys(r["task"] for r in rs))
         modes = list(by_mode)
+        lines += _category_table(rs, modes, tasks, title)
         lines += [f"### Per task — {title}", "", "| Task | " + " | ".join(modes) + " |",
                   "|---|" + "---|" * len(modes)]
         for t in tasks:
@@ -101,15 +140,18 @@ def write_report(out_dir: Path) -> Path:
             "median_wall_s": round(statistics.median(r["wall_s"] for r in xs), 2),
             "p95_wall_s": round(p95([r["wall_s"] for r in xs]), 2),
             "failure_categories": dict(Counter(failure_category(r) for r in xs if not r["success"])),
+            "tasks_solved_every_run": sum(all(r["success"] for r in xs if r["task"] == t)
+                                          for t in dict.fromkeys(r["task"] for r in xs)),
             "mean_turns": round(statistics.mean(r["steps"] for r in xs), 2),
             "mean_wall_s": round(statistics.mean(r["wall_s"] for r in xs), 2),
             "failures": [{"task": r["task"], "run": r["run"], "category": failure_category(r), "reason": r["reason"]}
                          for r in xs if not r["success"]],
         }
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=2))
-    # Only a full run (all 18 tasks, >= 3 runs) replaces the committed evals/report.md;
+    # Only a full run (all fixture tasks, >= 3 runs) replaces the committed evals/report.md;
     # quick or partial runs keep their report inside their own results folder.
-    if len(meta["tasks"]) >= 18 and meta["runs"] >= 3:
+    from evals.tasks import TASKS
+    if len(meta["tasks"]) >= len(TASKS) and meta["runs"] >= 3:
         latest = out_dir.parent.parent / "report.md"
         latest.write_text("\n".join(lines))
         return latest
