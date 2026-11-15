@@ -7,11 +7,16 @@
 **Lean Agent Browser is a reliable execution layer for AI agents on the web: compact context, actions
 that are verified against evidence, and safe recovery when pages change.**
 
-| Same 18 tasks, same agent (Claude Sonnet 5.5) | Success | Median tokens per task | Mean turns | Mean time |
+| 100 tasks, same agent (Claude Sonnet 5.5) | Success | Median tokens per task | Mean turns | Median time |
 |---|---|---|---|---|
-| Playwright MCP 0.0.83 (3 runs) | 54/54 | 48,576 | 7.5 | 18.6 s |
-| Vercel agent-browser 0.41.0, MCP `core` profile (1 run) | 17/18 | 146,314 | 8.7 | 16.1 s |
-| **Lean Agent Browser (3 runs)** | **54/54** | **11,572** | **5.1** | **11.0 s** |
+| Playwright MCP 0.0.83 (3 runs) | 300/300 * | 46,946 | 6.9 | 18.1 s |
+| **Lean Agent Browser (3 runs)** | **300/300** | **13,181** | **5.1** | **11.6 s** |
+
+Lean used fewer tokens than Playwright MCP on every one of the 100 tasks: 3.9× fewer on the median task.
+The tasks cover forms, multi-step flows, reading, navigation, widgets, dialogs, frames, dynamic pages and
+safety. \* 297/300 as run; one fixture was corrected and rerun, see [`docs/benchmark.md`](docs/benchmark.md).
+On the older 18-task suite, Vercel agent-browser 0.41.0 (MCP `core` profile, 1 run) scored 17/18 with a
+median of 146,314 tokens per task.
 
 Success is checked by the test server, not by what the agent claims. The method, the raw numbers and
 the limitations are in [`evals/CHANGELOG.md`](evals/CHANGELOG.md).
@@ -245,7 +250,7 @@ export ANTHROPIC_API_KEY=...
 ## Development
 
 ```bash
-.venv/bin/python -m pytest -q        # 213 passed, 2 skipped on 2026-11-15 (macOS arm64); local fixture site, both engines
+.venv/bin/python -m pytest -q        # 385 passed, 3 skipped on 2026-11-16 (macOS arm64); local fixture site, both engines
 .venv/bin/python scripts/snap.py login.html,orders.html obscura    # look at snapshots
 ```
 

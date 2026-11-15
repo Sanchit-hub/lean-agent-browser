@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.4.0 (2026-11-16): 100-task benchmark and Linux
+
+**Benchmark**
+- The fixture suite grew from 20 to **100 tasks** in nine categories (`evals/bench/`). Each task has a
+  server-side verifier and a scripted reference solution that the test suite runs.
+- Full run, Claude Sonnet 5.5 via `claude -p`, 3 runs each: Lean 300/300 with a median of 13,181 tokens per
+  task, Playwright MCP 300/300 with 46,946 (after one fixture correction, explained in `docs/benchmark.md`).
+  Lean used fewer tokens on all 100 tasks.
+- `claude_driver --jobs N` runs agents in parallel, each with its own fixture server; `--tags` picks a
+  category; `--resume` continues an interrupted run, and a Claude usage limit stops the run cleanly instead
+  of recording runs that never happened. The report adds success by category and tasks solved in every run.
+
+**Fixes found by the benchmark**
+- Ids follow the row a control is in. After a list re-rendered in a new order, an id could move to
+  another row's button, and Lean approved the wrong person's request.
+- Repeated controls say which row they belong to: `button "Approve" (in "Nisha Gupta, 2 days")`.
+- Switch and custom checkbox state comes from `aria-checked` (Obscura reported every switch as off).
+- Sliders, both native range inputs and ARIA sliders, can be set with `fill` and are verified.
+  `fill` used to claim "value set" on a slider it never moved.
+- Buttons inside headings get ids. Disclosures show `[open]`/`[closed]` and the text they reveal.
+- Pages with srcdoc or nested iframes go to Chromium.
+- `act(dialog, "accept:TEXT")` answers a `prompt()`.
+
+**Linux**
+- Supported and tested in CI: Ubuntu 24.04 on x86_64 and arm64, next to macOS 15 on Apple Silicon.
+- Pinned, hash-checked Obscura 0.2.7 builds per platform.
+- On Linux, Obscura runs only under bubblewrap: no home folder, read-only system folders, its own user and
+  PID namespaces, and it dies with its client. Without bubblewrap, Chromium serves every page.
+- `install.sh` hands engine installation to `leanb install`, so the hashes live in one place.
+
 ## 0.3.0 (2026-11-15): Reliability & Trust
 
 The goal of this release: an agent can tell not only what it can click, but whether the action actually

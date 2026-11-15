@@ -1,7 +1,7 @@
 # Project memory: Lean Agent Browser
 
 A living record of what this project is, what has been decided, and what is on this Mac.
-Update it whenever something important changes. Last updated: 2026-11-15 (v0.3.0 Reliability & Trust release).
+Update it whenever something important changes. Last updated: 2026-11-16 (v0.4.0: 100-task benchmark, Linux).
 
 ## What we're building
 A token-lean browser for AI agents. Pages come back as compact text with numeric ids, and actions
@@ -13,13 +13,16 @@ with Chromium as the fallback. It is exposed as an MCP server, a CLI (`leanb`) a
 verified against evidence, safe recovery. Token efficiency stays an advantage; reliability is the promise.
 
 ## Key results (details in `evals/CHANGELOG.md`)
-- **Fixture suite** (18 tasks, Claude Sonnet 5.5 via `claude -p`):
+- **Fixture suite, 100 tasks** (v0.4.0, Claude Sonnet 5.5 via `claude -p`; `docs/benchmark.md`):
 
   | Mode | Success | Median tokens per task |
   |---|---|---|
-  | **Lean** | **54/54** | **11.6k** |
-  | Playwright MCP | 54/54 | 48.6k |
-  | Vercel agent-browser (1 run) | 17/18 | 146k |
+  | **Lean (3 runs)** | **300/300** | **13.2k** |
+  | Playwright MCP (3 runs) | 300/300 (297 as run, one fixture fixed) | 46.9k |
+  | agent-browser (older 18-task run, 1 run) | 17/18 | 146k |
+- The 100-task agent-browser attempt was invalid (parallel interference, then the subscription's 5-hour
+  limit); agent-browser must run sequentially and costs 0.15–1M tokens per task.
+- Older 18-task result (v0.2): Lean 54/54 at 11.6k, Playwright MCP 54/54 at 48.6k, agent-browser 17/18 at 146k.
 
 - **Tool-definition cost per request** (measured with `claude -p`): lean ~1.55k tokens, Playwright MCP
   ~7.1k, agent-browser ~31.6k.
@@ -34,7 +37,8 @@ verified against evidence, safe recovery. Token efficiency stays an advantage; r
 - **Recovery** now checks a fingerprint, so a same-named control is never clicked by mistake.
 - **`LeanBrowser.context()`** gives task-aware, sourced records with explicit missing and conflicting fields.
 - **`leanb trace replay / export / delete`** were added.
-- **Cross-platform (P0 in the review) was skipped** on purpose: the user chose macOS-only.
+- **Cross-platform:** first skipped (the user chose macOS-only), then added in v0.4.0 when the user left it
+  to me: Linux x86_64 and arm64, Obscura under bubblewrap, CI on both.
 
 ## v0.3.0 Reliability & Trust (plan: `~/Downloads/lean_agent_browser_v0.3_reliability_trust_release_plan.md`)
 - **Audit first:** `docs/v0.3-gap-analysis.md` maps every plan item to existing code. The biggest real gap:
@@ -46,12 +50,25 @@ verified against evidence, safe recovery. Token efficiency stays an advantage; r
 - **Traces:** outcome, recovery, category, step ids; card/OTP/token fields and URL secrets redacted; page
   text opt-in.
 - **Release validation:** `scripts/smoke_clean_install.sh` (wheel, fresh venv, doctor, MCP) runs in CI.
-- **Not done:** a 100-task benchmark (we have 20 fixture + 5 live tasks; `docs/benchmark.md` says so),
-  Linux (user's macOS-only choice), and testing by outside developers.
+- **Not done in v0.3 (done in v0.4.0):** the 100-task benchmark and Linux. Testing by outside developers is
+  still open; the user will arrange it.
+
+## v0.4.0 (2026-11-16): 100-task benchmark and Linux
+- **Benchmark:** `evals/bench/` adds 80 tasks (9 categories). Each has a verifier and a scripted reference
+  solution, run by `tests/test_fixtures.py`. `claude_driver --jobs N --tags X`.
+- **Pilot found 6 Lean bugs, all fixed:** ids moved between rows after a reorder (it approved the wrong
+  person); repeated buttons had no row label; Obscura read every ARIA switch as off; sliders couldn't be set
+  and `fill` lied about it; buttons inside headings had no ids; srcdoc and nested iframes weren't routed.
+- **Fixture fix:** `hidden-price` treated off-screen text as a decoy, but screen readers read it. Now it
+  uses only truly hidden text; that task was rerun for both tools.
+- **Linux:** per-platform Obscura hashes; `bwrap_args()` sandbox; no bwrap means Chromium only;
+  `install.sh` calls `leanb install`; CI on ubuntu-24.04 and ubuntu-24.04-arm.
+- `act(dialog, "accept:TEXT")` answers `prompt()`.
 - Tool schemas still fit the 700 proxy-token budget (descriptions were trimmed to make room).
 
 ## Decisions (and why)
-- **macOS (Apple Silicon) only** for now. This was the user's choice.
+- **macOS (Apple Silicon) and Linux (x86_64, arm64).** Linux was added on 2026-11-16 with the user's go-ahead.
+  No Windows.
 - **Commits carry the user's name only:** the GitHub noreply email, and no Claude co-author trailer.
 - **Work autonomously:** commit and push after each step, and pick details yourself.
 - **Obscura is pinned (0.2.7, 0.2.6 for rollback) and hash-checked on every launch.** The binary is only ad-hoc signed,
@@ -89,7 +106,11 @@ verified against evidence, safe recovery. Token efficiency stays an advantage; r
   Fix: settle probes are time-boxed, the page moves to Chromium (`page unresponsive on obscura`), and
   the hung process restarts.
 - Obscura runs under a sandboxed sh watchdog that stops it when the Python client dies, even on
-  `kill -9`, so no orphaned engines are left behind.
+  `kill -9`, so no orphaned engines are left behind. On Linux, bwrap's `--die-with-parent` plus its PID
+  namespace does this.
+- Obscura gives every element a `.checked` property, so checked state for non-inputs must come from
+  `aria-checked`.
+- Scripts don't run in srcdoc iframes, and nested iframes can't be reached: both are routed to Chromium.
 
 ## How to resume
 ```bash
@@ -98,7 +119,8 @@ cd ~/Desktop/lean && .venv/bin/leanb doctor && .venv/bin/python -m pytest -q
 ```
 
 **Next:**
-- grow the benchmark toward 100 tasks; outside developers test the release candidate
+- outside developers test the release (the user will arrange it); tasks written by others and real-site
+  workflows, since both tools now hit 100% on our 100 tasks
 - automatic choice of when to use a screenshot
 - Stagehand and Browser Use in their own benchmark category (they need their own LLM keys)
 - publish to PyPI and make the repo public, both only when the user decides

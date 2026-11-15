@@ -25,6 +25,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -112,6 +113,8 @@ def run_one(base: str, task, mode: str, run: int, tmp: Path, log_dir: Path) -> R
     res.steps = out.get("num_turns", 0)
     res.stop = out.get("subtype", "")
     text = out.get("result") or ""
+    if re.search(r"hit your .{0,40}limit", text, re.I):  # the subscription ran out: the agent never browsed
+        res.stop = "usage_limit"
     res.answer = text.rsplit("FINAL:", 1)[-1].strip() if "FINAL:" in text else text[-300:]
     res.success, res.reason = task.verify(_state(base), res.answer)
     res.wall_s = round(time.time() - t0, 1)
@@ -156,6 +159,9 @@ def main():
     missing = [f"{m}: {need[m]}" for m in modes if m in need and not need[m].exists()]
     if missing:
         raise SystemExit("missing MCP server(s), run ./install.sh --with-eval:\n  " + "\n  ".join(missing))
+    if "agent-browser" in modes and a.jobs > 1:
+        # In a parallel attempt (2026-11-16) its runs took 3-5x more turns than sequential runs of the same tasks.
+        raise SystemExit("agent-browser runs must be sequential: use --jobs 1 for it")
     print(f"{len(tasks)} tasks x {len(modes)} modes x {a.runs} run(s) via claude -p ({MODEL}), {a.jobs} job(s); "
           f"results in {out_dir}", flush=True)
     jobs = [(r + 1, task, mode) for r in range(a.runs) for task in tasks for mode in modes if (r + 1, task.id, mode) not in done]
@@ -178,6 +184,11 @@ def main():
 
     with open(out_dir / "runs.jsonl", "a" if a.resume else "w") as runs_f, ThreadPoolExecutor(max(1, a.jobs)) as ex:
         for res in ex.map(work, jobs):
+            if res.stop == "usage_limit":  # don't record runs that never happened; --resume picks up from here
+                ex.shutdown(cancel_futures=True)
+                print(f"stopped: Claude usage limit reached ({res.answer[:80]!r}). Resume later with --resume {out_dir}",
+                      flush=True)
+                break
             runs_f.write(json.dumps({**asdict(res), "total_tokens": res.total_tokens,
                                      "weighted_input": res.weighted_input()}) + "\n")
             runs_f.flush()

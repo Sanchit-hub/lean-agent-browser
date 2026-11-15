@@ -1,5 +1,36 @@
 # Eval changelog
 
+## 2026-11-16 (v0.4.0): 100-task fixture suite
+
+80 new tasks (`evals/bench/`) joined the original 20. Claude Sonnet 5.5 via `claude -p`, 3 runs per tool,
+5 agents in parallel (each with its own fixture server).
+
+| Mode | Success | Tasks solved every run | Median total tokens | p95 total tokens | Mean turns | Median time |
+|---|---|---|---|---|---|---|
+| **Lean** | **300/300** | **100/100** | **13,181** | **28,497** | **5.1** | **11.6 s** |
+| Playwright MCP 0.0.83 | 300/300 (297/300 as run) | 100/100 | 46,946 | 101,198 | 6.9 | 18.1 s |
+| Vercel agent-browser 0.41.0 (`core` profile) | 17/18, original 18 tasks, 1 run (2026-11-15) | — | 146,314 | 398,947 | 8.7 | 12.9 s |
+
+- **The fixture correction.** Playwright MCP's three failures were all on `hidden-price`. It reported an
+  off-screen "sale price" (`left:-9999px`), which screen readers also read, so the fixture was wrong to treat
+  it as a hidden decoy. It now uses only truly hidden text. That task was rerun 3× for both tools: both 3/3.
+  Raw data for both runs is published.
+- **Tokens.** Lean used fewer tokens on all 100 tasks (per-task ratio 1.4× to 8.3×, median 3.9×). The original
+  20 tasks alone: Lean 12,644 median, Playwright MCP 47,313.
+- **Pilot.** A 1-run pilot of the 80 new tasks found six Lean bugs (Lean 74/80, Playwright MCP 79/80), all fixed
+  before the full run. The worst: after a list re-rendered in a new order, Lean approved the wrong person's
+  leave request. See `CHANGELOG.md` 0.4.0.
+- **Invalid: the 100-task agent-browser attempt** (`20261116-022027-claude-cli/`). It ran 4 at a time. On the
+  20 tasks it reached, its runs took 3–5× more turns than the sequential 2026-11-15 runs of the same tasks
+  (login: 41 turns vs 7), which points to parallel agent-browser instances getting in each other's way. Then
+  the Claude subscription hit its 5-hour limit, and the other 80 runs never browsed. None of it is reported.
+  The driver now refuses `--jobs` > 1 for agent-browser and stops cleanly at a usage limit (`--resume` continues).
+- **Limits.** We wrote every task, on a local site. Both tools reached 100%, so the suite no longer separates
+  them on success. agent-browser only has the 18-task, 1-run result.
+
+Raw data: `evals/results/20261116-014739-claude-cli/` (full run), `20261116-021951-claude-cli/`
+(`hidden-price` rerun), `20261116-022027-claude-cli/` (invalid agent-browser attempt), `20261116-012329-claude-cli/` (pilot).
+
 ## 2026-11-15 (v0.3.0): reliability tasks
 
 Two new fixture tasks test honest outcomes rather than raw capability:

@@ -495,7 +495,7 @@ The eval harness also runs a "lean + auto-escalate" variant to compare against.
 `evals/fixtures/` contains a local site (FastAPI + static pages) that **records every
 submission**, so success is checked by the server, not by what the agent says.
 
-18 tasks:
+The original 18 tasks (v0.3 added `order-once` and `honest-failure`, v0.4 added 80 more, below):
 
 | # | Task | Tests |
 |---|---|---|
