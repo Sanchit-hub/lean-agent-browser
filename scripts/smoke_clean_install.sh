@@ -31,7 +31,8 @@ echo "==> MCP round trip"
 PORT=$("$PY" -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')
 "$PY" -I "$ROOT/evals/fixtures/server.py" "$PORT" >/dev/null 2>&1 &
 SRV=$!
-sleep 1
+for _ in $(seq 1 60); do curl -fs "http://127.0.0.1:$PORT/api/state" >/dev/null && break; sleep 0.5; done
+curl -fs "http://127.0.0.1:$PORT/api/state" >/dev/null || { echo "fixture server did not start"; exit 1; }
 "$WORK/venv/bin/python" -I - "$WORK/venv/bin/leanb" "http://127.0.0.1:$PORT" <<'PYEOF'
 import asyncio, re, sys
 from mcp import ClientSession
@@ -46,7 +47,9 @@ async def main():
         names = sorted(t.name for t in (await s.list_tools()).tools)
         assert names == ["act", "extract", "fill_form", "memory", "open", "screenshot", "snapshot"], names
         out = (await s.call_tool("open", {"url": base + "/order.html"})).content[0].text
-        place = int(re.search(r'(\d+): button "Place order"', out).group(1))
+        m = re.search(r'(\d+): button "Place order"', out)
+        assert m, "open() did not return the order page:\n" + out
+        place = int(m.group(1))
         prev = (await s.call_tool("act", {"action": "click", "id": place, "dry_run": True})).content[0].text
         assert '"executed": false' in prev, prev
         res = (await s.call_tool("act", {"action": "click", "id": place})).content[0].text
