@@ -2,7 +2,7 @@
 reading, navigation, widgets, dialogs, frames, dynamic pages and safety. See docs/benchmark.md."""
 from __future__ import annotations
 
-from evals.bench import dialogs, dynamic, forms, frames, multistep, nav, read, safety, widgets  # noqa: F401  (register)
+from evals.bench import dialogs, dynamic, forms, frames, multistep, nav, read, safety, verification, widgets  # noqa: F401
 from evals.bench.core import PAGES, POST, REDIRECTS, REG
 
 

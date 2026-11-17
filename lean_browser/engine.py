@@ -245,6 +245,7 @@ class ObscuraProcess:
     allow_private_network: bool = False
     localhost_only: bool = False
     stealth: bool = False
+    proxy: str | None = None  # netguard URL: every connection is checked at connect time
     port: int = field(default_factory=_free_port)
     token: str = field(default_factory=lambda: secrets.token_hex(32))
     proc: subprocess.Popen | None = None
@@ -286,6 +287,8 @@ class ObscuraProcess:
             args.append("--allow-private-network")
         if self.stealth:
             args.append("--stealth")
+        if self.proxy:
+            args += ["--proxy", self.proxy]
         env = {"PATH": "/usr/bin:/bin", "HOME": self.tmp, "TMPDIR": self.tmp, "OBSCURA_CDP_TOKEN": self.token,
                "P": str(os.getpid())}
         self.proc = subprocess.Popen(args, env=env, cwd=self.tmp, stdin=subprocess.DEVNULL,
@@ -359,6 +362,7 @@ class BrowserManager:
         self._obscura_broken: str = ""
         self._chromium: Browser | None = None
         self._chromium_ctx: BrowserContext | None = None
+        self._guard = None  # netguard.NetGuard: connect-time private-network check for Chromium
 
     async def __aenter__(self):
         await self.start()
@@ -379,6 +383,9 @@ class BrowserManager:
             self._obscura.stop()
         if self._pw:
             await _bounded(self._pw.stop(), 10)
+        if self._guard:
+            await self._guard.close()
+            self._guard = None
 
     async def reset_obscura(self, reason: str):
         """Throw away a hung Obscura process (its script thread is stuck); the next page starts a fresh one."""
@@ -389,6 +396,23 @@ class BrowserManager:
         if self._obscura:
             self._obscura.stop()
         self._obscura = self._obscura_browser = self._obscura_ctx = None
+
+    async def _ensure_guard(self) -> str | None:
+        """Start the connect-time private-network guard once (both engines use it). None when private network is
+        allowed, when Obscura is limited to localhost anyway, or when the user's own proxy is configured."""
+        if self.allow_private_network or self.localhost_only:
+            return None
+        if self._guard:
+            return self._guard.url
+        if any(os.environ.get(k) for k in ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY")):
+            if not getattr(self, "_proxy_noted", False):
+                self._proxy_noted = True
+                self._note("an HTTP(S)_PROXY is set: the connect-time private-network guard is off; "
+                           "request-level checks still apply, redirect hops are not checked")
+            return None
+        from lean_browser.netguard import NetGuard
+        self._guard = await NetGuard(lambda h: self._note(f"blocked private-network connection to {h}")).start()
+        return self._guard.url
 
     # ---------- engines ----------
     def _note(self, msg: str):
@@ -406,7 +430,7 @@ class BrowserManager:
             raise EngineError(self._obscura_broken)
         try:
             self._obscura = ObscuraProcess(binary, allow_private_network=self.allow_private_network,
-                                           localhost_only=self.localhost_only)
+                                           localhost_only=self.localhost_only, proxy=await self._ensure_guard())
             await asyncio.to_thread(self._obscura.start)
             self._obscura_browser = await self._pw.chromium.connect_over_cdp(
                 self._obscura.endpoint, headers=self._obscura.headers, timeout=15000)
@@ -422,8 +446,14 @@ class BrowserManager:
 
     async def _chromium_context(self) -> BrowserContext:
         if not self._chromium_ctx:
-            self._chromium = await self._pw.chromium.launch(headless=True, args=[
-                "--disable-extensions", "--disable-sync", "--disable-background-networking", "--no-first-run"])
+            args = ["--disable-extensions", "--disable-sync", "--disable-background-networking", "--no-first-run"]
+            # Request routing only sees the first URL of a redirect chain, so every connection also goes through
+            # a local proxy that checks the resolved address at connect time (redirect hops, DNS rebinding,
+            # subresources, WebSockets). <-loopback> stops Chromium skipping the proxy for localhost.
+            guard = await self._ensure_guard()
+            if guard:
+                args += [f"--proxy-server={guard}", "--proxy-bypass-list=<-loopback>"]
+            self._chromium = await self._pw.chromium.launch(headless=True, args=args)
             self._chromium_ctx = await self._chromium.new_context(viewport=self.viewport)
             for js in self.init_scripts:
                 await self._chromium_ctx.add_init_script(js)

@@ -33,7 +33,7 @@ jobs:
       - name: Tests
         run: .venv/bin/python -m pytest -q -rs -s -k 'not big_page' && .venv/bin/python -m pytest -q -s -k big_page
       - name: Clean-install smoke test (wheel into a fresh venv, doctor, MCP round trip)
-        run: PYTHON=python3 ./scripts/smoke_clean_install.sh
+        run: PYTHON=python3 LEANB_UPGRADE_FROM=v0.5.0 ./scripts/smoke_clean_install.sh
 
   linux:
     strategy:
@@ -65,5 +65,5 @@ jobs:
       - name: Tests
         run: .venv/bin/python -m pytest -q -rs -s -k 'not big_page' && .venv/bin/python -m pytest -q -s -k big_page
       - name: Clean-install smoke test (wheel into a fresh venv, doctor, MCP round trip)
-        run: PYTHON=python3 ./scripts/smoke_clean_install.sh
+        run: PYTHON=python3 LEANB_UPGRADE_FROM=v0.5.0 ./scripts/smoke_clean_install.sh
 

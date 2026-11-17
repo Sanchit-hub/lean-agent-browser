@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.6.0 (2026-11-18): no false success, and a network guard that sees redirects
+
+**Verification honesty (release-blocking defects fixed)**
+A new suite (`evals/bench/verification.py`, 19 cases × 2 engines) tempts a false `verified`. Before this
+release, 14 of 38 runs reported `verified` for an outcome that didn't happen. Now 0 do, and every case where
+the outcome did happen is still `verified`. Fixed:
+- "Your changes were not saved", "Message wasn't sent", "unsuccessful" counted as success messages. They are
+  errors now (`blocked`).
+- A pay button replaced by "Processing…" counted as success ("target went away") even when a decline came
+  later. While a new "Processing…"-style text is on the page, Lean waits up to 8 s for the real answer.
+- A submit that came back to the same form with no message counted as success because the page changed.
+- A ticking "Last updated 3s ago" status counted as a success message.
+- A `confirm()` that was accepted, with nothing happening afterwards, counted as success for a delete.
+- A submit that opened a new tab counted as success, even when the tab said the payment failed.
+- **Obscura submitted forms that fail their own validation** (empty `required` fields, bad emails), which a
+  real browser refuses. Lean now checks the form's validation before any submit, on both engines, and
+  reports `blocked` with the fields and messages instead of sending it.
+
+**Security**
+- **A public page that redirected to localhost, LAN or 169.254.169.254 loaded on the Chromium engine.**
+  Playwright's request routing never sees redirect hops. Both engines now connect through a local guard proxy
+  (`lean_browser/netguard.py`). It resolves each host, refuses private addresses, and connects to the address
+  it checked, which also covers DNS rebinding, subresources and WebSockets. Regression test on both engines.
+  If you set `HTTP(S)_PROXY` yourself, the guard is off and the old request-level checks apply.
+- Upload path tests for symlinks and `..` escapes.
+
+**Evidence and process**
+- `scripts/verification_matrix.py`: the verification cases N times per engine, with the confusion matrix and
+  timings. `reliability.yml` runs it 10× on all three platforms weekly and before releases.
+- The clean-install test now also upgrades a pipx install from the previous tag (`LEANB_UPGRADE_FROM`) and
+  checks that the config is kept.
+- `docs/RELIABILITY.md` (statuses, evidence rules, where each is tested), release gates in
+  `docs/RELEASING.md`, and release reviews in `docs/reviews/`.
+
 ## 0.5.0 (2026-11-18): install and connect without help
 
 **Onboarding**

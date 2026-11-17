@@ -6,7 +6,9 @@
 #   4. leanb --version, leanb setup --yes (pinned Obscura + Chromium; skips pieces already verified),
 #   5. leanb doctor (engines, sandbox, MCP round trip) and doctor --json,
 #   6. the documented MCP client config: start `leanb mcp`, list tools, open a local page, act on it,
-#   7. if pipx is available: pipx install the same wheel and run leanb doctor from it.
+#   7. if pipx is available: pipx install the same wheel and run leanb doctor from it,
+#   8. if LEANB_UPGRADE_FROM is set (a tag, e.g. v0.5.0): install that release with pipx, then upgrade it to
+#      this wheel, and check the version changed, the config was kept and doctor still passes.
 # macOS arm64 and Linux (x86_64, arm64).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -90,7 +92,24 @@ if command -v pipx >/dev/null; then
   "$PIPX_BIN_DIR/leanb" doctor --no-claude | tee "$WORK/doctor-pipx.txt"
   grep -q "all good" "$WORK/doctor-pipx.txt"
   grep -q "(pipx)" "$WORK/doctor-pipx.txt"
+  if [ -n "${LEANB_UPGRADE_FROM:-}" ]; then
+    echo "==> upgrade: pipx install $LEANB_UPGRADE_FROM from GitHub, then this wheel"
+    export PIPX_HOME="$WORK/pipx-up" PIPX_BIN_DIR="$WORK/pipx-up-bin"
+    pipx install --python "$PY" "git+https://github.com/Sanchit-hub/lean-agent-browser@$LEANB_UPGRADE_FROM" >/dev/null
+    OLD="$("$PIPX_BIN_DIR/leanb" --version)"
+    CFG="$HOME/.lean-browser/config.toml"
+    BACKUP="$WORK/config.backup"; [ -f "$CFG" ] && cp "$CFG" "$BACKUP"
+    printf '# upgrade-test marker\nblock = true\n' > "$CFG"
+    pipx install --force --python "$PY" "$WHEEL" >/dev/null
+    NEW="$("$PIPX_BIN_DIR/leanb" --version)"
+    echo "$OLD -> $NEW"
+    "$PIPX_BIN_DIR/leanb" setup --yes --client none >/dev/null
+    grep -q "upgrade-test marker" "$CFG" || { echo "setup overwrote the config during the upgrade"; exit 1; }
+    "$PIPX_BIN_DIR/leanb" doctor --no-claude | tail -1 | grep -q "all good"
+    if [ -f "$BACKUP" ]; then cp "$BACKUP" "$CFG"; else rm -f "$CFG"; fi
+    echo "upgrade OK"
+  fi
 else
-  echo "==> pipx not installed; skipped the pipx install check"
+  echo "==> pipx not installed; skipped the pipx install and upgrade checks"
 fi
 echo "clean install smoke test passed"

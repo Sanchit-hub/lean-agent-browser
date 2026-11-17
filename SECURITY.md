@@ -18,6 +18,11 @@ impact. Expect a first reply within a week.
     disabled and Chromium serves every page.
 - **Private networks.** localhost, LAN and cloud-metadata addresses are blocked on **both** engines
   unless you set `allow_private_network`. Hostnames that resolve to those addresses are blocked too.
+  Both engines connect through a local guard proxy (`lean_browser/netguard.py`, 127.0.0.1 only). It resolves
+  every host itself, refuses if any address is private, and connects to the exact address it checked. That
+  covers redirect hops, DNS rebinding, subresources and WebSockets. Before v0.6.0, a public page that
+  redirected to a private address loaded on the Chromium engine: Playwright's request routing never sees
+  redirect hops.
 - **Prompt injection from pages.** Page content is wrapped in `<page untrusted="true">`, and hidden text
   (`display:none`, off-screen, `aria-hidden`, tiny fonts) is dropped from snapshots. This *reduces* the
   risk; it does not remove it. Agents must still treat page text as data.
@@ -46,6 +51,8 @@ impact. Expect a first reply within a week.
 - The sandbox only applies to Obscura. Chromium is Playwright's bundled build with a throwaway profile, and
   Playwright starts it with Chromium's own sandbox turned off. Pages that fall back to Chromium are not
   OS-isolated by Lean.
+- If `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` is set, the guard proxy is off (it doesn't chain to your
+  proxy). URLs and requests are still checked, but redirect hops and DNS rebinding are not.
 - On Linux, bubblewrap can't restrict which ports Obscura connects out to (macOS can, for `localhost_only`).
   The private-network block still applies on both engines.
 - Visible text written to manipulate agents still reaches the agent, inside the untrusted wrapper.

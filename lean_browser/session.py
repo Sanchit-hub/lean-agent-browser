@@ -163,6 +163,38 @@ TARGET_STATE_JS = r"""el => {
     slider: el.getAttribute('role') === 'slider' ? el.getAttribute('aria-valuenow') : (el.type === 'range' ? el.value : null) };
 }"""
 
+# The browser's own form validation (required, type=email, pattern, minlength), checked before a submit is
+# dispatched. Chromium would refuse the submit silently; Obscura doesn't validate at all and would send it.
+# Native checkValidity() when the engine has it, plus the same rules by hand for engines that don't.
+FORM_INVALID_JS = r"""(el, enter) => {
+  let form = null;
+  const b = el.closest && el.closest('button, input[type=submit], input[type=image]');
+  if (b && !enter) {
+    if ((b.type || '').toLowerCase() !== 'submit' && (b.type || '').toLowerCase() !== 'image') return null;
+    if (b.formNoValidate || b.hasAttribute('formnovalidate')) return null;
+    form = b.form || b.closest('form');
+  } else if (enter && el.form && /^(input)$/i.test(el.tagName)) form = el.form;
+  if (!form || form.noValidate || form.hasAttribute('novalidate')) return null;
+  const label = x => ((x.labels && x.labels[0] && x.labels[0].innerText) || x.getAttribute('aria-label') || x.name || x.type || 'field').trim();
+  const bad = [];
+  for (const x of Array.from(form.elements || [])) {
+    if (x.disabled || x.type === 'hidden' || x.type === 'submit' || x.type === 'button') continue;
+    let msg = '';
+    if (typeof x.checkValidity === 'function' && x.validity && !x.checkValidity()) msg = x.validationMessage || 'invalid';
+    const v = (x.value || '');
+    if (!msg && x.hasAttribute('required')) {
+      if (x.type === 'checkbox' && !x.checked) msg = 'must be checked';
+      else if (x.type === 'radio' && !form.querySelector(`input[type=radio][name="${CSS.escape(x.name)}"]:checked`)) msg = 'choose an option';
+      else if (x.type !== 'checkbox' && x.type !== 'radio' && !v.trim()) msg = 'is required';
+    }
+    if (!msg && v && x.type === 'email' && !/^[^@\s]+@[^@\s]+$/.test(v)) msg = 'is not a valid email address';
+    if (!msg && v && x.minLength > 0 && v.length < x.minLength) msg = `needs at least ${x.minLength} characters`;
+    if (!msg && v && x.getAttribute('pattern')) { try { if (!new RegExp('^(?:' + x.getAttribute('pattern') + ')$').test(v)) msg = 'does not match the required format'; } catch (e) {} }
+    if (msg && !bad.some(s => s.startsWith(label(x) + ':'))) bad.push(label(x) + ': ' + msg);
+  }
+  return bad.length ? bad : null;
+}"""
+
 _norm = lambda x: " ".join(str(x or "").split()).lower()
 
 # Outcome signals. English-only heuristics: a site that shows neither stays "unverified"; pass expect= then.
@@ -171,6 +203,15 @@ SUCCESS_RE = re.compile(r"\b(thank(s| you)|success(ful(ly)?)?|saved|created|rece
 ERROR_RE = re.compile(r"\b(errors?|invalid|incorrect|failed|failure|wrong|already (taken|exists|registered|in use)|"
                       r"is taken|denied|not allowed|forbidden|unable|could ?n[o\'’]t|try again|declined|rejected|"
                       r"must (be|have|include|match|accept)|(is|are) required|do(es)? not match)\b", re.I)
+_SUCCESS_WORDS = (r"(sent|saved|submitted|placed|confirmed|created|received|updated|added|completed?|booked|"
+                  r"registered|published|posted|processed|accepted|approved|delivered|successful(ly)?)")
+# "was not saved", "wasn't sent", "could not be completed", "never received", "unsuccessful": failures that
+# contain a success word. They count as errors and never as success.
+NEGATED_SUCCESS_RE = re.compile(r"(\b(not|never|no longer)\b|n[\'’]t\b)(\s+\w+){0,3}?\s+" + _SUCCESS_WORDS + r"\b|\bunsuccessful", re.I)
+# Text that says the result isn't known yet. While it is on screen, a vanished button proves nothing.
+PENDING_RE = re.compile(r"\b(processing|please wait|loading|submitting|sending|saving|in progress|verifying|"
+                        r"authori[sz]ing|redirecting|hold on|one moment)\b|…\s*$|\.\.\.\s*$", re.I)
+TIMEISH_RE = re.compile(r"\b\d+\s*(s|secs?|seconds?|m|mins?|minutes?|h|hrs?|hours?)\b|\bago\b|\b\d{1,2}:\d{2}(:\d{2})?\b", re.I)
 SAFE_ACTIONS = {"hover", "focus", "scroll", "wait_for"}
 SUBMIT_KEYS = {"enter"}
 
@@ -213,6 +254,21 @@ def _texts(snap: Snapshot | None) -> list[tuple[str, str]]:
     return out
 
 
+def _plain_texts(snap: Snapshot | None) -> list[tuple[str, str]]:
+    """(kind, text) for ordinary text lines (not headings or live regions)."""
+    out: list[tuple[str, str]] = []
+
+    def walk(entries):
+        for e in entries:
+            if e["t"] == "txt" and not e.get("live"):
+                out.append(("txt", e.get("text", "")))
+            elif e["t"] == "group":
+                walk(e["items"])
+    if snap:
+        walk(snap.data.get("entries", []))
+    return out
+
+
 def error_category(msg: str) -> str:
     """Stable category for an error message (traces, LeanBrowserError.category)."""
     m = msg.lower()
@@ -243,6 +299,7 @@ class TabState:
     notes: list[str] = field(default_factory=list)
     dialog_policy: str = "accept"
     nav_status: int | None = None
+    pre_lines: set | None = None        # visible text lines before a submit-like action (pending detection)
 
     @property
     def page(self) -> Page:
@@ -645,6 +702,15 @@ class Session:
             raise ActionError(f'duplicate: {(entry or {}).get("role", "element")} "{name}" was already used on this page '
                               f'{ago}s ago (status: {prior[1]}). Check the page first; to really do it again call act '
                               'with value="repeat"')
+        if action == "click" or (action == "press" and str(value or "").lower() in SUBMIT_KEYS):
+            el = (await ts.page.evaluate_handle(RESOLVE_JS, int(id))).as_element() if id is not None else None
+            bad = await self._form_invalid(el, action == "press") if el else None
+            if bad:
+                self.last_outcome = {**base_outcome, "executed": False, "status": "blocked",
+                                     "evidence": ["form validation: " + "; ".join(bad[:4])]}
+                raise ActionError("blocked: the form's own validation stops this submit (a browser would too): "
+                                  + "; ".join(bad[:4]) + ". Fill those fields, then submit again")
+        ts.pre_lines = await self._page_lines(ts) if safety == "unsafe" else None
         tabs_before = len(self.tabs)
         await self._sync_dialog_policy(ts)
         ts.nav_status = None
@@ -656,6 +722,26 @@ class Session:
         if dup and self.last_outcome:
             self._unsafe_log[dup] = (time.time(), self.last_outcome["status"])
         return out
+
+    async def _page_lines(self, ts: TabState) -> set[str]:
+        """Short visible text lines of the page (for spotting a new "Processing…" that snapshots leave out)."""
+        try:
+            lines = await ts.page.evaluate("() => (document.body && document.body.innerText || '').split('\\n')")
+        except Exception:
+            return set()
+        return {" ".join(x.split()) for x in lines if 0 < len(x.strip()) < 80}
+
+    async def _new_pending(self, ts: TabState) -> list[str]:
+        pre = ts.pre_lines
+        if pre is None:
+            return []
+        return [t for t in await self._page_lines(ts) - pre if PENDING_RE.search(t)]
+
+    async def _form_invalid(self, el, enter: bool = False) -> list[str] | None:
+        try:
+            return await el.evaluate(FORM_INVALID_JS, enter)
+        except Exception:
+            return None
 
     def _dup_key(self, ts: TabState, action: str, entry: dict | None, value=None) -> tuple:
         e = entry or {}
@@ -855,8 +941,34 @@ class Session:
         status = ""
         if expect:
             sig = self._signals(ts, before, after, page_changed, expect)
+            submit_like = expect.get("submitted") if expect["kind"] == "form" else expect.get("safety") == "unsafe"
+            if submit_like and not page_changed:
+                sig["pending"] = sig["pending"] or await self._new_pending(ts)
+            # The page says it is still working ("Processing…"): wait for the real answer, up to ~8 s.
+            waited = 0.0
+            while submit_like and sig["pending"] and not sig["errors"] and not sig["success"] and waited < 8:
+                await asyncio.sleep(0.5)
+                waited += 0.5
+                settled = await self._settle(ts) and settled
+                await self._drain_dialog_shim(ts)
+                late = self._drain(ts)
+                notes = (notes + "\n" + late if notes else late) if late else notes
+                after = await self._take(ts)
+                d = diff(before, after)
+                page_changed = d is None
+                changed = page_changed or bool(d)
+                sig = self._signals(ts, before, after, page_changed, expect)
+                if not page_changed:
+                    sig["pending"] = sig["pending"] or await self._new_pending(ts)
+                    if not sig["pending"] and not sig["errors"] and not sig["success"]:
+                        sig["errors"] = [f'"{t[:80]}"' for t in await self._page_lines(ts) - (ts.pre_lines or set())
+                                         if ERROR_RE.search(t) or NEGATED_SUCCESS_RE.search(t)][:3]
+                        sig["success"] = [t for t in await self._page_lines(ts) - (ts.pre_lines or set())
+                                          if SUCCESS_RE.search(t) and not ERROR_RE.search(t) and not NEGATED_SUCCESS_RE.search(t)][:1]
             exp_res = await self._check_expect(ts, expect.get("expect"), after) if expect.get("expect") else None
             status = self._status(expect, states, after, page_changed, changed, settled, bool(notes), sig, exp_res)
+            if waited:
+                notes = (notes + "\n" if notes else "") + f"waited {waited:.1f}s for the page to finish processing"
         head = status + prefix + (notes + "\n" if notes else "")
         if page_changed:
             return head + ts.snapper.render(after, skip_unchanged=False)
@@ -869,7 +981,13 @@ class Session:
         nts = self.cur
         await self._settle(nts)
         note = self._drain(ts)
-        status = self._finish(expect, "verified", ["new tab opened"]) if expect else ""
+        submit_like = expect and (expect.get("submitted") if expect.get("kind") == "form" else expect.get("safety") == "unsafe")
+        if not expect:
+            status = ""
+        elif submit_like and not expect.get("expect"):
+            status = self._finish(expect, "unverified", ["a new tab opened; read it to see whether this worked"])
+        else:
+            status = self._finish(expect, "verified", ["new tab opened"])
         return status + prefix + (note + "\n" if note else "") + self._render_full(nts, await self._take(nts))
 
     def _signals(self, ts: TabState, before: Snapshot, after: Snapshot, page_changed: bool, expect: dict) -> dict:
@@ -877,17 +995,32 @@ class Session:
         target or its form went away. Only things that are new since `before` count."""
         bi, ai = _index(before), _index(after)
         old = set() if page_changed else set(_texts(before))
-        new = [(k, t) for k, t in _texts(after) if (k, t) not in old]
+        # A clock that ticks ("Last updated 3s ago", "12:01:07") is not new evidence: a time-like text that only
+        # changed in its digits is ignored. ("Order #2 placed" after "Order #1 placed" still counts.)
+        churn = {(k, re.sub(r"\d+", "#", t)) for k, t in old}
+        new = [(k, t) for k, t in _texts(after) if (k, t) not in old
+               and not ((k, re.sub(r"\d+", "#", t)) in churn and TIMEISH_RE.search(t))]
         errors = []
         for i, e in ai.items():
             if e.get("err") and (page_changed or (bi.get(i) or {}).get("err") != e["err"]):
                 errors.append(f'{e.get("name") or e["role"]}: "{e["err"]}"')
         for k, t in new:
-            if ERROR_RE.search(t) and not SUCCESS_RE.search(t) and (k == "live" or page_changed):
+            negated = bool(NEGATED_SUCCESS_RE.search(t))
+            if (negated or (ERROR_RE.search(t) and not SUCCESS_RE.search(t))) and (k == "live" or page_changed or negated):
                 errors.append(f'"{t[:80]}"')
         if ts.nav_status and ts.nav_status >= 400 and page_changed:
             errors.append(f"HTTP {ts.nav_status}")
-        success = [t for k, t in new if SUCCESS_RE.search(t) and not ERROR_RE.search(t) and (k == "live" or page_changed or k == "h")]
+        success = [t for k, t in new if SUCCESS_RE.search(t) and not ERROR_RE.search(t) and not NEGATED_SUCCESS_RE.search(t)
+                   and (k == "live" or page_changed or k == "h")]
+        pending = [t for k, t in _texts(after) + _plain_texts(after) if PENDING_RE.search(t) and len(t) < 80]
+        # After a submit the page changed, yet the same form came back with the same headings and no message:
+        # a silent rejection or reload, not proof of success.
+        same_form = False
+        if page_changed and expect["kind"] == "action":
+            ent = expect.get("entry") or {}
+            heads = lambda snap: sorted(t for k, t in _texts(snap) if k == "h")
+            same_form = bool(ent.get("name")) and heads(before) == heads(after) and any(
+                e.get("role") == ent.get("role") and e.get("name") == ent.get("name") for e in ai.values())
         tid = expect.get("id")
         target_gone = expect["kind"] == "action" and tid is not None and not page_changed and tid in bi and tid not in ai
         # A submitted form whose text fields were emptied (todo inputs, chat boxes) is a success signal too.
@@ -896,7 +1029,8 @@ class Session:
         if form_key and not page_changed:
             filled = [i for i, e in bi.items() if e.get("role") == "textbox" and e.get("val") and (e.get("fp") or {}).get("form") == form_key]
             cleared = bool(filled) and all(i in ai and not ai[i].get("val") for i in filled)
-        return {"errors": errors, "success": success, "target_gone": target_gone, "cleared": cleared}
+        return {"errors": errors, "success": success, "target_gone": target_gone, "cleared": cleared,
+                "pending": pending, "same_form": same_form}
 
     async def _check_expect(self, ts: TabState, want: str, after: Snapshot) -> tuple[bool, str]:
         """Caller's postcondition: "url:<part>", "gone:<id>", or text that must appear. Bounded to ~3 s."""
@@ -977,14 +1111,22 @@ class Session:
         elif exp_res is not None:
             word = "verified" if exp_res[0] else ("timed_out" if not settled else "unverified")
             evidence += nav + [exp_res[1]]
-        elif dialog and not changed:
+        elif dialog and not changed and not submit_like:
             word, evidence = "verified", evidence + ["dialog shown"]
         else:
-            strong = nav + [f'success message "{t[:60]}"' for t in sig["success"][:1]]
-            if sig["target_gone"] and changed:
+            if sig["same_form"] and not sig["success"]:
+                nav = [n + " (the same form came back, no success message)" for n in nav]
+                strong = []
+            else:
+                strong = nav + [f'success message "{t[:60]}"' for t in sig["success"][:1]]
+            if sig["target_gone"] and changed and not sig["pending"]:
                 strong.append("target went away")
-            if sig["cleared"]:
+            if sig["cleared"] and not sig["pending"]:
                 strong.append("form was cleared")
+            if dialog and not changed:
+                evidence.append("a dialog was answered, but nothing changed after it")
+            if sig["pending"] and not strong:
+                evidence.append(f'page still shows "{sig["pending"][0][:40]}"')
             if submit_like:
                 if strong:
                     word, evidence = "verified", evidence + strong
@@ -1075,6 +1217,7 @@ class Session:
                 problems.append(f"{fid}: {reason}")
         uncertain = None
         ts.nav_status = None
+        ts.pre_lines = await self._page_lines(ts) if submit else None
         if submit and not errors:
             try:
                 if submit is True:
@@ -1083,9 +1226,16 @@ class Session:
                     if not btn:
                         errors.append("submit: no submit button found in the form — pass submit=<button id>")
                     else:
+                        bad = await self._form_invalid(btn)
+                        if bad:
+                            raise ActionError("blocked: the form's own validation stops this submit: " + "; ".join(bad[:4]))
                         await self._click(ts, btn)
                 else:
-                    await self._click(ts, await self._handle(ts, int(submit)))
+                    btn = await self._handle(ts, int(submit))
+                    bad = await self._form_invalid(btn)
+                    if bad:
+                        raise ActionError("blocked: the form's own validation stops this submit: " + "; ".join(bad[:4]))
+                    await self._click(ts, btn)
             except ActionError as err:
                 errors.append(f"submit: {err}")
             except Exception as err:

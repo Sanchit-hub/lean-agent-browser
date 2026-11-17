@@ -26,6 +26,25 @@ One-time setup, done by the maintainer on pypi.org and test.pypi.org: add a trus
 `Sanchit-hub/lean-agent-browser`, workflow `release.yml`, environments `pypi` and `testpypi`. Create those two
 environments in the repository settings (requiring a reviewer on `pypi` is a good idea).
 
+## Release gates
+
+A release candidate ships only if all of these hold. A gate can fail; then the release waits or its claims
+shrink.
+
+| Gate | Evidence |
+|---|---|
+| No known critical security defect | open issues, `SECURITY.md` known limits |
+| Zero false `verified` in the verification suite | `tests/test_verification.py` in CI; `reliability.yml` with 10 runs per case per engine on all three platforms |
+| Full test suite green on every supported platform | `ci.yml` |
+| Clean install, upgrade from the previous tag, doctor and MCP round trip | `scripts/smoke_clean_install.sh` with `LEANB_UPGRADE_FROM` in CI |
+| Claude Code acceptance test | the table below, run by hand, result in the review |
+| No unexplained regression over 10% in median or p95 tokens on the fixture benchmark, after changes to schemas, routing or verification | `evals/claude_driver` run (costs subscription usage) |
+| Three first-time users completed onboarding unaided (needed for a wide release, not for a preview) | first-time user test notes |
+| Known limitations documented | README Limitations, `docs/RELIABILITY.md`, `SECURITY.md` |
+
+Each release gets a short review in `docs/reviews/vX.Y.Z.md`: scope, evidence, security, compatibility,
+known limits, rollback, and the decision (SHIP, HOLD or REVERT).
+
 ## Checklist for a release
 
 1. `lean_browser/__version__` and `CHANGELOG.md` updated; CI green on `main`.

@@ -125,12 +125,17 @@ A click being sent is not the same as the task succeeding. Every `act` and `fill
 |---|---|
 | `verified` | Evidence that it worked: the value is set, or after a submit the page navigated without errors, a success message appeared, the form was cleared, or your `expect=` matched |
 | `unverified` | It ran, but nothing shows that it worked (no change, or a submit with no success signal) |
-| `blocked` | The page rejected it (field errors, an error alert, HTTP 4xx/5xx), or Lean refused it (confirmation needed, duplicate) |
+| `blocked` | The page rejected it (field errors, an error alert, a "not saved"-style message, HTTP 4xx/5xx), the form's own validation stopped the submit (required, email, pattern), or Lean refused it (confirmation needed, duplicate) |
 | `ambiguous` | It may or may not have been sent (an error after dispatch); check before doing anything else |
 | `timed_out` | The page was still busy when the wait ended |
 | `done` | Hover, focus, scroll: nothing to verify |
 
 - **`expect=`** states the postcondition: text that must appear, `url:/thanks`, or `gone:<id>`.
+- **No false success.** A submit is `verified` only on a navigation (not the same form coming back), a new
+  success message that isn't negated, or the button or form clearing without a "Processing…" left on the page.
+  While the page says it is still processing, Lean waits up to 8 s for the answer. A release fails if any
+  case in the verification suite reports `verified` for an outcome that didn't happen; the rules and the
+  suite are in [`docs/RELIABILITY.md`](docs/RELIABILITY.md).
 - **Duplicate guard.** Submits, payments, deletes and sends are classed `unsafe`. Lean never retries
   them, and repeating one on the same page after a `verified`, `ambiguous` or `timed_out` outcome is
   blocked unless you pass `value="repeat"` (`submit="repeat"` for forms).
@@ -249,7 +254,9 @@ snapshot_timeout_s = 2.0            # slower snapshots move the page to Chromium
   The network rules below still apply to it.
 - **No private network by default.** localhost, RFC1918 and link-local (including 169.254.169.254)
   are blocked on both engines unless you set `allow_private_network`, so falling back to Chromium
-  never widens network access.
+  never widens network access. Both engines connect through a local guard that checks the resolved
+  address at connect time, so a public page that redirects to an internal address, or a hostname that
+  re-resolves to one, is refused too. (Not when you set `HTTP(S)_PROXY` yourself: see SECURITY.md.)
 - **Untrusted page content.** Everything taken from a page comes back inside
   `<page untrusted="true">…</page>`, and the MCP server instructions tell the agent to treat it as
   data. Hidden text (`display:none`, off-screen, `aria-hidden`, tiny fonts) is dropped, which removes
@@ -319,7 +326,7 @@ export ANTHROPIC_API_KEY=...
 ### Tests and layout
 
 ```bash
-.venv/bin/python -m pytest -q        # 396 passed, 3 skipped on 2026-11-18 (macOS arm64); local fixture site, both engines
+.venv/bin/python -m pytest -q        # 440 passed, 3 skipped on 2026-11-18 (macOS arm64); local fixture site, both engines
 .venv/bin/python scripts/snap.py login.html,orders.html obscura    # look at snapshots
 ```
 

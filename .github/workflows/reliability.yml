@@ -1,0 +1,47 @@
+name: Reliability
+
+# Repeated runs of the verification-honesty cases (evals/bench/verification.py) on every supported platform:
+# 10 runs per case per engine, confusion matrix and timings uploaded as an artifact. Fails on any false
+# `verified`. Weekly, and by hand before a release (docs/RELEASING.md).
+on:
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+    inputs:
+      runs:
+        description: "Runs per case per engine"
+        default: "10"
+
+permissions:
+  contents: read
+
+jobs:
+  matrix:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Linux prerequisites
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q bubblewrap
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: Install
+        run: |
+          PYTHON=python3 ./install.sh || true
+          if [ "$RUNNER_OS" = Linux ]; then sudo .venv/bin/python -m playwright install-deps chromium; fi
+          .venv/bin/leanb doctor --no-claude
+      - name: Verification matrix
+        run: .venv/bin/python scripts/verification_matrix.py --runs "${{ inputs.runs || '10' }}" --json verification-${{ matrix.os }}.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        if: always()
+        with:
+          name: verification-${{ matrix.os }}
+          path: verification-${{ matrix.os }}.json

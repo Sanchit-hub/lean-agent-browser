@@ -245,3 +245,62 @@ def test_linux_sandbox_hides_home_and_allows_only_its_temp_dir(tmp_path):
     assert run(f"echo x > {tmp_path}/ok && cat {tmp_path}/ok").stdout.strip() == "x"
     assert run("echo x > /usr/evil").returncode != 0  # system folders are read-only
     assert os.getuid() == 0 or run("id -u").stdout.strip() != "0"
+
+
+@pytest.mark.parametrize("engine", ["chromium"] + (["obscura"] if eng.find_obscura() and eng.sandbox_tool() else []))
+async def test_redirect_to_private_address_is_blocked(monkeypatch, engine):
+    """A public page that redirects to localhost (or 169.254.169.254) must not load. Request routing never sees
+    redirect hops, so the connect-time guard (netguard) has to catch it."""
+    import http.server
+    import threading
+
+    from lean_browser import netguard
+
+    class H(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/redir":
+                self.send_response(302)
+                self.send_header("Location", f"http://127.0.0.1:{port}/secret")
+                self.end_headers()
+            else:
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.end_headers()
+                self.wfile.write(b"<title>INTERNAL</title><h1>internal admin</h1>")
+
+        def log_message(self, *a):
+            pass
+
+    srv = http.server.HTTPServer(("127.0.0.1", 0), H)
+    port = srv.server_address[1]
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    real = netguard.resolve_public
+
+    async def fake(host, p):  # "public.example" plays a public site that happens to live on this machine
+        return "127.0.0.1" if host == "public.example" else await real(host, p)
+
+    monkeypatch.setattr(netguard, "resolve_public", fake)
+    try:
+        async with BrowserManager(prefer=engine) as bm:
+            try:
+                tab = await bm.open(f"http://public.example:{port}/redir")
+                text = await tab.page.content()
+            except Exception as e:  # a refused navigation is fine too
+                text = str(e)
+            assert "internal admin" not in text, text
+            assert any("blocked private-network connection to 127.0.0.1" in e for e in bm.events), bm.events
+        # the same site without the redirect still loads through the guard
+        async with BrowserManager(prefer=engine) as bm:
+            tab = await bm.open(f"http://public.example:{port}/page")
+            assert "internal admin" in await tab.page.content()
+            assert tab.engine == engine, (tab.engine, tab.reason)
+    finally:
+        srv.shutdown()
+
+
+async def test_netguard_refuses_private_targets():
+    from lean_browser.netguard import resolve_public
+    for host in ("127.0.0.1", "localhost", "10.0.0.5", "169.254.169.254", "::1", "0.0.0.0"):
+        with pytest.raises(PermissionError):
+            await resolve_public(host, 80)
+    assert await resolve_public("8.8.8.8", 53) == "8.8.8.8"

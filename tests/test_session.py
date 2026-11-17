@@ -298,3 +298,23 @@ async def test_recovery_refuses_a_contradicting_twin(s):
     with pytest.raises(ActionError, match="none match the original"):
         await s.act("click", save)
     assert await s.cur.page.text_content("#out") == ""
+
+
+def test_upload_path_guard_resolves_symlinks_and_dotdot(tmp_path):
+    allowed, outside = tmp_path / "uploads", tmp_path / "private"
+    allowed.mkdir()
+    outside.mkdir()
+    (outside / "secret.txt").write_text("x")
+    (allowed / "ok.pdf").write_text("x")
+    (allowed / "link.txt").symlink_to(outside / "secret.txt")
+    (allowed / "dirlink").symlink_to(outside)
+    sess = Session.__new__(Session)
+    sess.upload_dirs = [allowed.resolve()]
+    assert sess._check_upload(str(allowed / "ok.pdf")) == str((allowed / "ok.pdf").resolve())
+    for bad in (allowed / "link.txt", allowed / "dirlink" / "secret.txt", allowed / ".." / "private" / "secret.txt"):
+        with pytest.raises(ActionError, match="outside the allowed folders"):
+            sess._check_upload(str(bad))
+    with pytest.raises(ActionError, match="absolute"):
+        sess._check_upload("uploads/ok.pdf")
+    with pytest.raises(ActionError, match="no such file"):
+        sess._check_upload(str(allowed / "missing.pdf"))
