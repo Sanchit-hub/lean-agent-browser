@@ -71,8 +71,8 @@ verified against evidence, safe recovery. Token efficiency stays an advantage; r
 - The repo is public (2026-11-18). Not on PyPI: the README installs a tag with
   `pipx install "git+https://github.com/Sanchit-hub/lean-agent-browser@v0.6.0"`. `release.yml` publishes to PyPI
   only when the user publishes a GitHub Release, after setting up trusted publishing.
-- Still the user's to do: enable private vulnerability reporting, PyPI trusted publisher, the three-person
-  first-time user test (`docs/RELEASING.md`), revoke the leaked key in `.env`.
+- Private vulnerability reporting enabled (2026-11-18). Still the user's to do: PyPI trusted publisher and the
+  three-person first-time user test (`docs/RELEASING.md`).
 
 ## v0.4.0 (2026-11-16): 100-task benchmark and Linux
 - **Benchmark:** `evals/bench/` adds 80 tasks (9 categories). Each has a verifier and a scripted reference
@@ -110,7 +110,7 @@ verified against evidence, safe recovery. Token efficiency stays an advantage; r
 | `~/.lean-browser/traces/` | Traces from `leanb --trace` (dir 700, files 600) |
 | `~/Desktop/lean/.vendor/` | Spike copy of Obscura, Playwright MCP 0.0.83, agent-browser 0.41.0 (eval baselines) |
 | `~/Desktop/lean/evals/results/` | Raw eval runs (gitignored) |
-| `~/Desktop/lean/.env` | Gitignored, chmod 600. **Holds an API key that was pasted in chat: revoke it and delete the line.** |
+| `~/Desktop/lean/.env` | Gitignored, chmod 600. The API key in it was a temporary one that expired after 3 hours (user, 2026-11-18). Never print or commit it. |
 | `~/.claude/projects/-Users-sanchitthareja-Desktop-lean/memory/` | Claude's memory notes for this project |
 
 ## Obscura quirks we work around

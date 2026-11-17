@@ -83,8 +83,6 @@ only the older 18-task, 1-run result. Every task was written by the project auth
 - Not on PyPI. The release workflow is ready; trusted publishing has to be set up by the maintainer.
 - No first-time user test by people outside the project yet (protocol in `docs/RELEASING.md`).
 - One MCP client documented and tested: Claude Code.
-- GitHub private vulnerability reporting is disabled on the repository, so the reporting link in
-  `SECURITY.md` doesn't work until the maintainer enables it.
 - Network containment (v0.6.0): connect-time guard on both engines with a redirect regression test. DNS
   rebinding and WebSockets go through the same guard but have no dedicated test. The guard is off when
   `HTTP(S)_PROXY` is set.
