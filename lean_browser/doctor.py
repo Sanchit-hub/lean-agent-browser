@@ -36,8 +36,11 @@ class Check:
 
 
 def _home(s: str) -> str:
-    h = str(Path.home())
-    return s.replace(h, "~") if h and h != "/" else s
+    """Shorten the home folder to ~ (also its resolved form, e.g. /private/tmp/... for /tmp/...)."""
+    for h in sorted({str(Path.home().resolve()), str(Path.home())}, key=len, reverse=True):
+        if h and h != "/":
+            s = s.replace(h, "~")
+    return s
 
 
 def install_kind() -> str:
