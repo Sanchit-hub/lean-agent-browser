@@ -1,7 +1,7 @@
 # Project memory: Lean Agent Browser
 
 A living record of what this project is, what has been decided, and what is on this Mac.
-Update it whenever something important changes. Last updated: 2026-11-18 (v0.5.0: install and connect without help).
+Update it whenever something important changes. Last updated: 2026-11-18 (v0.6.0: no false success, network guard).
 
 ## What we're building
 A token-lean browser for AI agents. Pages come back as compact text with numeric ids, and actions
@@ -53,6 +53,15 @@ verified against evidence, safe recovery. Token efficiency stays an advantage; r
 - **Not done in v0.3 (done in v0.4.0):** the 100-task benchmark and Linux. Testing by outside developers is
   still open; the user will arrange it.
 
+## v0.6.0 (2026-11-18): Software Factory spec, Phase 1 (reliability) and part of Phase 3 (security)
+- Verification suite `evals/bench/verification.py` (20 cases × 2 engines): found 14 false `verified` runs, all
+  fixed (negated success, Processing… then decline, same form back, ticking clock, confirm then nothing,
+  new tab, Obscura submitting invalid forms). `scripts/verification_matrix.py --runs N`; `reliability.yml`.
+- Redirect-to-private SSRF on Chromium (Playwright routing never sees redirect hops) fixed with
+  `netguard.py`, a 127.0.0.1 proxy that checks resolved IPs at connect time, used by both engines.
+- Lean benchmark rerun 99/100 at the same tokens; the failure was an ARIA checkbox bug (fixed, 3/3).
+- Docs: `docs/RELIABILITY.md`, release gates in `docs/RELEASING.md`, reviews in `docs/reviews/`.
+
 ## v0.5.0 (2026-11-18): onboarding (from the user's distribution + productisation specs)
 - Specs the user gave: end-user route (pipx, `leanb setup`, doctor, Claude Code registration, first task) and
   a contributor route (`install.sh`), one codebase. Verified baseline in `docs/BASELINE.md`.
@@ -60,7 +69,7 @@ verified against evidence, safe recovery. Token efficiency stays an advantage; r
   `uninstall` / `--version`. Claude Code is changed only through `claude mcp add-json/get/remove`, user scope,
   and only after a yes (`--yes` for scripts). Tested against the real CLI under a throwaway HOME.
 - The repo is public (2026-11-18). Not on PyPI: the README installs a tag with
-  `pipx install "git+https://github.com/Sanchit-hub/lean-agent-browser@v0.5.0"`. `release.yml` publishes to PyPI
+  `pipx install "git+https://github.com/Sanchit-hub/lean-agent-browser@v0.6.0"`. `release.yml` publishes to PyPI
   only when the user publishes a GitHub Release, after setting up trusted publishing.
 - Still the user's to do: enable private vulnerability reporting, PyPI trusted publisher, the three-person
   first-time user test (`docs/RELEASING.md`), revoke the leaked key in `.env`.

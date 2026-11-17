@@ -23,7 +23,7 @@ Lean is not on PyPI yet. Until it is, install a tagged release straight from Git
 final `pipx install lean-agent-browser`):
 
 ```bash
-pipx install "git+https://github.com/Sanchit-hub/lean-agent-browser@v0.5.0"
+pipx install "git+https://github.com/Sanchit-hub/lean-agent-browser@v0.6.0"
 ```
 
 ```bash
@@ -326,7 +326,7 @@ export ANTHROPIC_API_KEY=...
 ### Tests and layout
 
 ```bash
-.venv/bin/python -m pytest -q        # 440 passed, 3 skipped on 2026-11-18 (macOS arm64); local fixture site, both engines
+.venv/bin/python -m pytest -q        # 443 passed, 3 skipped on 2026-11-18 (macOS arm64); local fixture site, both engines
 .venv/bin/python scripts/snap.py login.html,orders.html obscura    # look at snapshots
 ```
 

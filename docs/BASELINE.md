@@ -1,4 +1,4 @@
-# Baseline (verified 2026-11-18)
+# Baseline (verified 2026-11-18, updated for v0.6.0)
 
 What exists today, checked against the code, the test suite and CI rather than older notes. Update it
 at the end of each milestone. Facts here come from the commands named next to them.
@@ -7,7 +7,7 @@ at the end of each milestone. Facts here come from the commands named next to th
 
 | Item | Value | Source |
 |---|---|---|
-| Version | 0.5.0 (`lean_browser.__version__`, the only version source; `pyproject.toml` reads it) | `leanb --version` |
+| Version | 0.6.0 (`lean_browser.__version__`, the only version source; `pyproject.toml` reads it) | `leanb --version` |
 | Before this baseline | `main` at `575c6bf` (v0.4.0); no git tags and no GitHub Releases existed | `git tag`, `gh api .../releases` |
 | Repository | public, Apache-2.0 | `gh repo view` |
 | PyPI | not published | |
@@ -50,6 +50,7 @@ at the end of each milestone. Facts here come from the commands named next to th
 | Clean-install test, macOS arm64 (local) | passed: wheel contents, venv path with a space, `setup --yes`, doctor 9/9 PASS, `doctor --json`, MCP round trip |
 | pipx install of the checkout (local, PIPX_HOME with a space) | `leanb --version` 0.5.0, doctor all PASS, install kind `pipx` |
 | Real Claude Code CLI 2.1.322, throwaway HOME | register, no duplicate, update a stale entry, unrelated server kept, uninstall removes only `lean-browser` |
+| Verification suite, 20 cases × 2 engines × 10 runs (v0.6.0) | 0 false verified, 0 false unverified in 400 runs (`scripts/verification_matrix.py`) |
 | CI (3 platforms), commit `dfc8805` | green: macOS 15, Ubuntu 24.04 x86_64 and arm64, each with the clean-install test including pipx |
 | README route from GitHub, tag `v0.5.0`, throwaway HOME | `pipx install "git+...@v0.5.0"`, `leanb setup --yes`: doctor 9/9 PASS, Claude Code entry added and reported `✔ Connected` |
 | README first-task prompt through `claude -p` with Lean attached | Claude called `open` then `snapshot` and described example.com correctly |
@@ -84,8 +85,8 @@ only the older 18-task, 1-run result. Every task was written by the project auth
 - One MCP client documented and tested: Claude Code.
 - GitHub private vulnerability reporting is disabled on the repository, so the reporting link in
   `SECURITY.md` doesn't work until the maintainer enables it.
-- Network containment: tested for localhost, RFC1918, link-local and metadata addresses on both engines,
-  plus IPv4-mapped and unique-local IPv6 addresses (`test_is_private_host`). DNS rebinding, WebSockets and alternative IP encodings are not
-  covered by dedicated tests.
+- Network containment (v0.6.0): connect-time guard on both engines with a redirect regression test. DNS
+  rebinding and WebSockets go through the same guard but have no dedicated test. The guard is off when
+  `HTTP(S)_PROXY` is set.
 - Chromium runs without its OS sandbox.
-- No upgrade test from a previous release yet: 0.5.0 is the first tagged version.
+- Upgrade from v0.5.0 is tested in CI (pipx); older versions were never tagged.

@@ -1,0 +1,23 @@
+{
+  "run": "20261118-041748-claude-cli",
+  "model": "claude-sonnet-5-5 via claude -p",
+  "tasks": [
+    "waitlist"
+  ],
+  "runs": 3,
+  "modes": {
+    "lean": {
+      "success": 3,
+      "attempts": 3,
+      "median_total_tokens": 9243,
+      "p95_total_tokens": 9250,
+      "median_wall_s": 9.2,
+      "p95_wall_s": 9.2,
+      "failure_categories": {},
+      "tasks_solved_every_run": 1,
+      "mean_turns": 3,
+      "mean_wall_s": 9.07,
+      "failures": []
+    }
+  }
+}

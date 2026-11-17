@@ -118,6 +118,12 @@ case("fill-ok", "/v/name.html", "fill", 'textbox "Full name"', "Asha Rao", True,
 case("check-ok", "/v/check-ok.html", "check", 'checkbox "Email me offers"', None, True, "plain checkbox",
      shell("Prefs", "<main><h1>Preferences</h1><label><input type='checkbox'> Email me offers</label></main>"))
 
+case("aria-check-ok", "/v/aria-check.html", "check", 'checkbox "I agree to the privacy policy"', None, True,
+     "custom <span role=checkbox>: the 2026-11-18 benchmark found check reported it as failed on Obscura",
+     shell("Waitlist", "<main><h1>Join</h1><p><span id='lbl'>I agree to the privacy policy</span> <span role='checkbox' "
+           "aria-checked='false' aria-labelledby='lbl' tabindex='0' id='cb' style='display:inline-block;width:16px;height:16px;border:1px solid'></span></p></main>",
+           "const cb = document.getElementById('cb'); cb.onclick = () => cb.setAttribute('aria-checked', cb.getAttribute('aria-checked') !== 'true');"))
+
 case("tab-switch", "/v/tabs.html", "click", 'tab "Specs"', None, True, "a tab shows its panel",
      shell("Phone", "<main><h1>Phone</h1><div role='tablist'><button role='tab' aria-selected='true' id='a'>Overview</button>"
            "<button role='tab' aria-selected='false' id='b'>Specs</button></div><div role='tabpanel' id='p'>Great camera.</div></main>",

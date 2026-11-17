@@ -7,7 +7,7 @@ Thanks for helping. This page covers everything you need to make a change and ge
 ```bash
 ./install.sh                     # .venv, pinned + checksummed Obscura, Chromium, self-check
                                  # Linux: sudo apt install bubblewrap first
-.venv/bin/python -m pytest -q    # 440 passed, 3 skipped (2026-11-18, macOS), about 7 min; local fixture site, both engines
+.venv/bin/python -m pytest -q    # 443 passed, 3 skipped (2026-11-18, macOS), about 7 min; local fixture site, both engines
 ./scripts/smoke_clean_install.sh # release check: wheel into a fresh venv, setup, doctor, MCP round trip, pipx
 ```
 

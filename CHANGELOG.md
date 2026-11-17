@@ -18,6 +18,15 @@ the outcome did happen is still `verified`. Fixed:
   real browser refuses. Lean now checks the form's validation before any submit, on both engines, and
   reports `blocked` with the fields and messages instead of sending it.
 
+- **ARIA checkboxes** (`<span role="checkbox">`): `check` reported "did not become checked" on Obscura although
+  it worked (Obscura gives every element a `.checked`), so `fill_form` refused to submit; on Chromium the
+  state read back as unknown and the result stayed `unverified`. Both now read `aria-checked`. Found by the
+  benchmark rerun below (the agent then claimed "done"); `waitlist` passes 3/3 again with 9.2k tokens.
+
+**Benchmark rerun after these changes** (Lean, 100 tasks, 1 run, `evals/results/20261118-040843-claude-cli/`):
+99/100, median 13,110 tokens (v0.4.0: 13,181), p95 28,356 (28,497), 5.1 turns, 11.3 s. No regression. The one
+failure was the ARIA checkbox bug above, fixed and rerun 3/3 (`evals/results/20261118-041748-claude-cli/`).
+
 **Security**
 - **A public page that redirected to localhost, LAN or 169.254.169.254 loaded on the Chromium engine.**
   Playwright's request routing never sees redirect hops. Both engines now connect through a local guard proxy

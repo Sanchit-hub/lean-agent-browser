@@ -76,6 +76,14 @@ Lean used fewer tokens than Playwright MCP on **all 100 tasks**. The per-task ra
 | Frames & shadow DOM | 6 | 9,393 | 46,606 | 5.0× |
 | Multi-step flows | 6 | 25,845 | 91,647 | 3.5× |
 
+### Rerun after v0.6.0's verification changes
+
+v0.6.0 changed what counts as `verified` (see `docs/RELIABILITY.md`), so Lean was rerun once on all 100 tasks
+(2026-11-18, `evals/results/20261118-040843-claude-cli/`): **99/100**, median 13,110 tokens, p95 28,356, 5.1
+turns, 11.3 s. That is in line with v0.4.0's 13,181 / 28,497. The one failure (`waitlist`) was a real bug in
+checking ARIA checkboxes, which was fixed. That task was rerun 3/3 (`evals/results/20261118-041748-claude-cli/`).
+Playwright MCP wasn't rerun: nothing on its side changed.
+
 ### What the pilot found
 
 Before the full run, a 1-run pilot of the 80 new tasks scored Lean 74/80 and Playwright MCP 79/80. Lean's
@@ -97,6 +105,8 @@ six failures were real bugs, all fixed before the full run:
 | `hidden-price` rerun after the fixture fix | `evals/results/20261116-021951-claude-cli/` |
 | agent-browser × 1, 18 original tasks, sequential (reported) | `evals/results/20261115-021309-claude-cli/` |
 | agent-browser 100-task attempt (invalid, not reported) | `evals/results/20261116-022027-claude-cli/` |
+| v0.6.0 rerun, Lean × 1, 100 tasks | `evals/results/20261118-040843-claude-cli/` |
+| v0.6.0 `waitlist` rerun after the ARIA checkbox fix, Lean × 3 | `evals/results/20261118-041748-claude-cli/` |
 | Pilot (80 new tasks × 1) | `evals/results/20261116-012329-claude-cli/` |
 | Pilot re-check of the fixed tasks (Lean) | `evals/results/20261116-014650-claude-cli/` |
 

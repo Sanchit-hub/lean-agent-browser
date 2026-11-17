@@ -59,8 +59,10 @@ DOM_ACT_JS = r"""(el, [action, value]) => {
     case 'focus': if (el.focus) el.focus(); return 'ok';
     case 'fill': setVal(String(value)); return 'ok';
     case 'clear': setVal(''); return 'ok';
-    case 'check': if (!el.checked) clickSeq(); return el.checked ? 'ok' : 'error: did not become checked';
-    case 'uncheck': if (el.checked) clickSeq(); return !el.checked ? 'ok' : 'error: still checked';
+    case 'check': { const on = () => el.tagName === 'INPUT' ? !!el.checked : el.getAttribute('aria-checked') === 'true';
+      if (!on()) clickSeq(); return on() ? 'ok' : 'error: did not become checked'; }
+    case 'uncheck': { const on = () => el.tagName === 'INPUT' ? !!el.checked : el.getAttribute('aria-checked') === 'true';
+      if (on()) clickSeq(); return !on() ? 'ok' : 'error: still checked'; }
     case 'select': {
       if (el.tagName === 'SELECT') {
         const o = [...el.options].find(o => norm(o.text) === norm(value)) || [...el.options].find(o => o.value === String(value))
@@ -156,7 +158,8 @@ TARGET_STATE_JS = r"""el => {
     return ((l && l.textContent) || r.value || '').replace(/\s+/g, ' ').trim(); };
   return { connected: el.isConnected, type: (el.getAttribute('type') || '').toLowerCase(),
     value: typeof el.value === 'string' ? el.value : null,
-    checked: typeof el.checked === 'boolean' ? el.checked : null,
+    checked: el.tagName === 'INPUT' && typeof el.checked === 'boolean' ? el.checked
+      : (el.hasAttribute('aria-checked') ? el.getAttribute('aria-checked') === 'true' : null),
     selected: el.tagName === 'SELECT' && el.selectedIndex >= 0 ? el.options[el.selectedIndex].text.trim() : null,
     text: el.isContentEditable ? (el.innerText || '').trim() : (el.getAttribute('role') === 'combobox' ? (el.innerText || '').trim() : null),
     radio: radio(), files: el.files ? el.files.length : null,
