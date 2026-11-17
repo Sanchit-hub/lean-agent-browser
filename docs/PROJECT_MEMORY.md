@@ -1,7 +1,7 @@
 # Project memory: Lean Agent Browser
 
 A living record of what this project is, what has been decided, and what is on this Mac.
-Update it whenever something important changes. Last updated: 2026-11-16 (v0.4.0: 100-task benchmark, Linux).
+Update it whenever something important changes. Last updated: 2026-11-18 (v0.5.0: install and connect without help).
 
 ## What we're building
 A token-lean browser for AI agents. Pages come back as compact text with numeric ids, and actions
@@ -52,6 +52,18 @@ verified against evidence, safe recovery. Token efficiency stays an advantage; r
 - **Release validation:** `scripts/smoke_clean_install.sh` (wheel, fresh venv, doctor, MCP) runs in CI.
 - **Not done in v0.3 (done in v0.4.0):** the 100-task benchmark and Linux. Testing by outside developers is
   still open; the user will arrange it.
+
+## v0.5.0 (2026-11-18): onboarding (from the user's distribution + productisation specs)
+- Specs the user gave: end-user route (pipx, `leanb setup`, doctor, Claude Code registration, first task) and
+  a contributor route (`install.sh`), one codebase. Verified baseline in `docs/BASELINE.md`.
+- `leanb setup` / `doctor` (PASS/WARN/FAIL/NOT SUPPORTED, `--json`, MCP round trip, Claude Code entry) /
+  `uninstall` / `--version`. Claude Code is changed only through `claude mcp add-json/get/remove`, user scope,
+  and only after a yes (`--yes` for scripts). Tested against the real CLI under a throwaway HOME.
+- The repo is public (2026-11-18). Not on PyPI: the README installs a tag with
+  `pipx install "git+https://github.com/Sanchit-hub/lean-agent-browser@v0.5.0"`. `release.yml` publishes to PyPI
+  only when the user publishes a GitHub Release, after setting up trusted publishing.
+- Still the user's to do: enable private vulnerability reporting, PyPI trusted publisher, the three-person
+  first-time user test (`docs/RELEASING.md`), revoke the leaked key in `.env`.
 
 ## v0.4.0 (2026-11-16): 100-task benchmark and Linux
 - **Benchmark:** `evals/bench/` adds 80 tasks (9 categories). Each has a verifier and a scripted reference

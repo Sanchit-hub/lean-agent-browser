@@ -7,8 +7,8 @@ Thanks for helping. This page covers everything you need to make a change and ge
 ```bash
 ./install.sh                     # .venv, pinned + checksummed Obscura, Chromium, self-check
                                  # Linux: sudo apt install bubblewrap first
-.venv/bin/python -m pytest -q    # 385 passed, 3 skipped (2026-11-16, macOS), about 6 min; local fixture site, both engines
-./scripts/smoke_clean_install.sh # release check: wheel into a fresh venv, doctor, MCP round trip
+.venv/bin/python -m pytest -q    # 396 passed, 3 skipped (2026-11-18, macOS), about 6 min; local fixture site, both engines
+./scripts/smoke_clean_install.sh # release check: wheel into a fresh venv, setup, doctor, MCP round trip, pipx
 ```
 
 ## Where things live
@@ -19,6 +19,8 @@ Thanks for helping. This page covers everything you need to make a change and ge
 | Page to compact text | `lean_browser/snapshot.js` (runs in the page), `lean_browser/snapshot.py` (render, budgets, find) |
 | Actions, outcomes, recovery, dry-run | `lean_browser/session.py`, `lean_browser/settle.py`, `lean_browser/diff.py` |
 | Tools / MCP / CLI | `lean_browser/tools.py`, `lean_browser/mcp_server.py`, `lean_browser/cli.py` |
+| Setup, doctor, Claude Code registration | `lean_browser/onboarding.py`, `lean_browser/doctor.py`, `lean_browser/claude_code.py` (writes only through `claude mcp`) |
+| Releases | `docs/RELEASING.md`, `.github/workflows/release.yml` |
 | Eval tasks and runners | `evals/` (tasks are checked by the fixture server in `evals/fixtures/`); the 80 newer tasks live in `evals/bench/`, one module per category |
 
 `SPEC.md` explains the design. `spike/FINDINGS.md` explains why each Obscura workaround exists.

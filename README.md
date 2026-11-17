@@ -7,6 +7,78 @@
 **Lean Agent Browser is a reliable execution layer for AI agents on the web: compact context, actions
 that are verified against evidence, and safe recovery when pages change.**
 
+**[Install for Claude Code](#install-for-claude-code)** (recommended) · **[First task](#first-task)** ·
+**[Develop / contribute](#develop--contribute)** · [Troubleshooting](docs/TROUBLESHOOTING.md)
+
+## Install for Claude Code
+
+| | |
+|---|---|
+| **Supported** (tested in CI) | macOS 15+ on Apple Silicon · Ubuntu 24.04 on x86_64 and arm64 |
+| **Not supported** | Windows, Intel Macs, other Linux distributions (untested; Chromium alone may work) |
+| **You need** | Python 3.12+, [pipx](https://pipx.pypa.io), [Claude Code](https://claude.com/claude-code), git, and internet access for a one-time engine download (~700 MB on disk) |
+| **Linux only** | `sudo apt install bubblewrap`. Without it Obscura stays off and Chromium serves every page |
+
+Lean is not on PyPI yet. Until it is, install a tagged release straight from GitHub (a preview of the
+final `pipx install lean-agent-browser`):
+
+```bash
+pipx install "git+https://github.com/Sanchit-hub/lean-agent-browser@v0.5.0"
+```
+
+```bash
+leanb setup
+```
+
+`leanb setup` asks before it changes anything. It:
+1. checks that your platform is supported,
+2. downloads the two browser engines into `~/.lean-browser` (Obscura, pinned and SHA256-checked, and
+   Playwright's Chromium). It never touches your own Chrome or its profile,
+3. runs `leanb doctor`: both engines load a page, and the MCP server starts and answers,
+4. shows the exact Claude Code entry it will add (`claude mcp add-json -s user lean-browser ...`, with the
+   absolute path of `leanb`), then adds it. Other MCP servers are not touched, and re-running updates the
+   entry instead of adding a second one.
+
+Then start a new Claude Code session and run `/mcp`: `lean-browser` should show as connected.
+Run `leanb setup --yes` to accept every prompt. On Linux, if `leanb doctor` says Chromium's system
+libraries are missing, run the one `sudo` command it prints.
+
+<details><summary>Register with Claude Code by hand instead</summary>
+
+```bash
+claude mcp add -s user lean-browser -- "$(command -v leanb)" mcp
+```
+</details>
+
+Updating and removing: [`docs/UPGRADING.md`](docs/UPGRADING.md) (`pipx upgrade lean-agent-browser`, then
+`leanb setup`; `leanb uninstall` removes the engines and the Claude Code entry). If something fails, run
+`leanb doctor` and see [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md).
+
+## First task
+
+Paste this into Claude Code:
+
+```text
+Use Lean Agent Browser to open https://example.com.
+Take a compact snapshot and explain the page's main content.
+Do not submit forms, purchase anything, or perform any external side effect.
+```
+
+You should see Claude call `lean-browser` tools (`open`, then maybe `snapshot`) rather than answer from
+memory. Then a practical read-only task:
+
+```text
+Use Lean Agent Browser to open https://news.ycombinator.com/.
+Find the first five story titles and their links.
+Return them as a numbered list with the source URL.
+```
+
+Before you let an agent submit forms or make purchases, read [Outcomes you can trust](#outcomes-you-can-trust):
+a click being sent is not proof that it worked, and an `ambiguous` result must not be retried blindly.
+Page content is untrusted data, and localhost and LAN addresses are blocked unless you allow them.
+
+## How it compares
+
 | 100 tasks, same agent (Claude Sonnet 5.5) | Success | Median tokens per task | Mean turns | Median time |
 |---|---|---|---|---|
 | Playwright MCP 0.0.83 (3 runs) | 300/300 * | 46,946 | 6.9 | 18.1 s |
@@ -70,26 +142,8 @@ A click being sent is not the same as the task succeeding. Every `act` and `fill
 - From Python, `browser.last_outcome` has the same result as a dict (`status`, `evidence`,
   `retry_safety`, `recovery`), and `LeanBrowserError.category` classifies errors.
 
-## Quickstart (macOS on Apple Silicon, or Linux)
+## Use it from Python
 
-```bash
-git clone https://github.com/Sanchit-hub/lean-agent-browser && cd lean-agent-browser
-./install.sh                                         # pinned, checksummed Obscura + Chromium, then a self-check
-# Linux: sudo apt install bubblewrap (Obscura's sandbox) and, once, sudo .venv/bin/python -m playwright install-deps chromium
-.venv/bin/leanb open https://news.ycombinator.com/   # print a snapshot
-```
-
-The repository is private for now, so cloning needs GitHub access.
-
-Or as a package, without cloning (same GitHub access needed; not on PyPI yet):
-
-```bash
-pip install "git+https://github.com/Sanchit-hub/lean-agent-browser"
-leanb install    # pinned, checksummed Obscura + Chromium into ~/.lean-browser
-leanb doctor
-```
-
-From Python:
 
 ```python
 from lean_browser import LeanBrowser
@@ -104,6 +158,20 @@ More in [`examples/`](examples/): `quickstart.py`, `form_fill.py` (fills a publi
 checks what the server received), `structured_extract.py` (a Wikipedia table as JSON, no LLM involved),
 and `task_context.py` (task-aware context: sourced product records with explicit missing fields, and the
 comparison done in your code).
+
+## Tools (MCP)
+
+There are seven tools. Claude counts their definitions at about 1.5k tokens, and they are sent with every request (Playwright MCP's come to ~7.1k, agent-browser's default profile to ~31.6k; measured with `claude -p`, see `evals/CHANGELOG.md`):
+
+| Tool | What it does |
+|---|---|
+| `open(url, mode?, block?)` | Navigate, then return a snapshot. `mode` is `minimal` (interactive elements only), `actions` (default), `read` (markdown) or `full`. |
+| `snapshot(mode?, budget?, expand?, more?, find?, within?)` | Current page. `expand:h1` opens a collapsed group, `more:k1` continues cut-off output, `find` searches everything (including collapsed rows), and `within=<id>` shows only the form, table or section containing that element. |
+| `act(action, id?, value?, expect?, dry_run?)` | Actions: `click`, `fill`, `select` (an option label, also works on custom dropdowns), `check`, `uncheck`, `clear`, `press`, `hover`, `focus`, `upload`, `scroll`, `back`, `forward`, `reload`, `wait_for`, `tab` (`list` / `new:URL` / `switch:N` / `close:N`), `dialog` (`accept` / `dismiss` the next native dialog). Returns a status line (see [Outcomes](#outcomes-you-can-trust)) and a diff. A re-rendered element is re-found once by role and name, and the match must not contradict its fingerprint (link target, test id, field name, form, row text, landmark). If the match is ambiguous or contradicted, nothing is clicked. |
+| `fill_form(fields, submit?, expect?, dry_run?)` | `{id: value}` for a whole form in one call. `submit=true` clicks the form's submit button. |
+| `extract(kind?, within?, fields?, new_only?)` | Deterministic JSON for a `table`, `list` or `form` (no LLM involved). Every result carries its source URL, plus row or item numbers and element ids. `fields` picks columns, and `new_only` returns only rows not returned before, which suits pagination and infinite scroll. |
+| `memory(action, key?, value?)` | Notes the agent keeps across pages (`set`, `get`, `list`, `delete`, `clear`), each with its source URL, so a value read on one page can be used on another. |
+| `screenshot(id?, annotate?)` | Viewport or element PNG. `annotate=true` draws each snapshot id on its element, so the image maps back to ids the agent can act on. Only for captchas, charts or layout. |
 
 ## How it works
 
@@ -131,40 +199,11 @@ agent ──MCP / CLI / Python──▶  7 tools  ──▶  snapshot · act · 
   stays `unverified`. Pass `expect=` when it matters.
 - The duplicate guard is per session and per page. It can't see side effects from another session.
 - A dry run reflects the page at that moment; the page can change before you execute.
-- This release has not yet been tested by outside developers.
+- This release has not yet been tested by outside developers, and it is not on PyPI yet.
 - Obscura 0.2.7 can't upload files, type into rich-text editors, open popups, read cross-origin iframes,
   run scripts in srcdoc iframes or reach nested iframes. Those pages run on Chromium automatically.
 
 See [`ROADMAP.md`](ROADMAP.md) for what's next.
-
-## Install details
-
-`./install.sh`:
-- creates `.venv/` with pinned Python dependencies
-- downloads **Obscura 0.2.7** and checks its SHA256 against a pinned value
-- installs the Obscura binaries to `~/.lean-browser/bin/` and re-checks their hashes
-- installs Playwright's Chromium to `~/.lean-browser/pw-browsers/`
-- runs `leanb doctor` to check everything works
-
-To also install the Playwright MCP baseline used by the evals (needs Node.js 20 or later), run
-`./install.sh --with-eval`.
-
-## Use it from Claude Code (MCP)
-
-```bash
-claude mcp add lean-browser -- "$PWD/.venv/bin/leanb" mcp
-```
-
-There are seven tools. Claude counts their definitions at about 1.5k tokens, and they are sent with every request (Playwright MCP's come to ~7.1k, agent-browser's default profile to ~31.6k; measured with `claude -p`, see `evals/CHANGELOG.md`):
-
-| Tool | What it does |
-|---|---|
-| `open(url, mode?, block?)` | Navigate, then return a snapshot. `mode` is `minimal` (interactive elements only), `actions` (default), `read` (markdown) or `full`. |
-| `snapshot(mode?, budget?, expand?, more?, find?, within?)` | Current page. `expand:h1` opens a collapsed group, `more:k1` continues cut-off output, `find` searches everything (including collapsed rows), and `within=<id>` shows only the form, table or section containing that element. |
-| `act(action, id?, value?, expect?, dry_run?)` | Actions: `click`, `fill`, `select` (an option label, also works on custom dropdowns), `check`, `uncheck`, `clear`, `press`, `hover`, `focus`, `upload`, `scroll`, `back`, `forward`, `reload`, `wait_for`, `tab` (`list` / `new:URL` / `switch:N` / `close:N`), `dialog` (`accept` / `dismiss` the next native dialog). Returns a status line (see [Outcomes](#outcomes-you-can-trust)) and a diff. A re-rendered element is re-found once by role and name, and the match must not contradict its fingerprint (link target, test id, field name, form, row text, landmark). If the match is ambiguous or contradicted, nothing is clicked. |
-| `fill_form(fields, submit?, expect?, dry_run?)` | `{id: value}` for a whole form in one call. `submit=true` clicks the form's submit button. |
-| `extract(kind?, within?, fields?, new_only?)` | Deterministic JSON for a `table`, `list` or `form` (no LLM involved). Every result carries its source URL, plus row or item numbers and element ids. `fields` picks columns, and `new_only` returns only rows not returned before, which suits pagination and infinite scroll. |
-| `screenshot(id?, annotate?)` | Viewport or element PNG. `annotate=true` draws each snapshot id on its element, so the image maps back to ids the agent can act on. Only for captchas, charts or layout. |
 
 ## CLI
 
@@ -172,7 +211,11 @@ There are seven tools. Claude counts their definitions at about 1.5k tokens, and
 leanb open https://news.ycombinator.com/          # one-shot snapshot
 leanb open https://en.wikipedia.org/wiki/Rust --mode read
 leanb shell https://example.com/login             # interactive: act / fill / find / expand / extract ...
-leanb doctor                                      # check the install
+leanb setup                                       # guided first run (engines, checks, Claude Code entry)
+leanb doctor                                      # check the install: PASS / WARN / FAIL / NOT SUPPORTED per check
+leanb doctor --json                               # the same, for a bug report (home paths shortened to ~)
+leanb uninstall                                   # remove the engines and the Claude Code entry (--all: config too)
+leanb --version
 leanb --allow-private-network open http://localhost:3000   # local dev servers
 ```
 
@@ -201,14 +244,17 @@ snapshot_timeout_s = 2.0            # slower snapshots move the page to Chromium
   listens on localhost. Its CDP port is bound to 127.0.0.1 and needs a
   random 32-byte token per launch.
 - **Chromium never touches your profile.** It is Playwright's bundled build with a throwaway
-  profile, not your own Chrome.
+  profile, not your own Chrome. It is not OS-sandboxed by Lean: Playwright starts Chromium with
+  Chromium's own sandbox turned off, so pages that fall back to Chromium don't get Obscura's isolation.
+  The network rules below still apply to it.
 - **No private network by default.** localhost, RFC1918 and link-local (including 169.254.169.254)
   are blocked on both engines unless you set `allow_private_network`, so falling back to Chromium
   never widens network access.
 - **Untrusted page content.** Everything taken from a page comes back inside
   `<page untrusted="true">…</page>`, and the MCP server instructions tell the agent to treat it as
   data. Hidden text (`display:none`, off-screen, `aria-hidden`, tiny fonts) is dropped, which removes
-  a common prompt-injection trick. Password values are never shown (`••••`).
+  a common prompt-injection trick. This does not prevent prompt injection: visible text can still
+  carry instructions, and the agent has to treat it as data. Password values are never shown (`••••`).
 - **Uploads are restricted.** Only absolute paths inside `allowed_upload_dirs` can be uploaded.
 
 ## How it decides between Obscura and Chromium
@@ -219,7 +265,30 @@ ignored), or a cross-origin iframe. A page also moves to Chromium if a snapshot 
 2 s, if navigation fails, or if Obscura isn't installed. Cookies are carried over. Every routing rule
 comes from a test in `spike/FINDINGS.md`.
 
-## Evals
+## Develop / contribute
+
+For contributors, or to run unreleased changes. This is a separate install from the one above, with the
+same code and the same `~/.lean-browser` engines.
+
+```bash
+git clone https://github.com/Sanchit-hub/lean-agent-browser && cd lean-agent-browser
+./install.sh                                         # .venv with pinned deps, engines, then leanb doctor
+# Linux: sudo apt install bubblewrap and, once, sudo .venv/bin/python -m playwright install-deps chromium
+.venv/bin/leanb open https://news.ycombinator.com/   # print a snapshot
+.venv/bin/leanb setup --client claude                # point Claude Code at this checkout
+```
+
+`./install.sh`:
+- creates `.venv/` with pinned Python dependencies (the dev extras used by CI)
+- downloads **Obscura 0.2.7** and checks its SHA256 against a pinned value
+- installs the Obscura binaries to `~/.lean-browser/bin/` and re-checks their hashes
+- installs Playwright's Chromium to `~/.lean-browser/pw-browsers/`
+- runs `leanb doctor` to check everything works
+
+Tests need no API key. To also install the Playwright MCP and agent-browser baselines used by the evals
+(needs Node.js 20 or later), run `./install.sh --with-eval`. See [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
+### Evals
 
 **No API key? Use your Claude subscription.** `evals/claude_driver.py` runs the same tasks with the
 Claude Code CLI (`claude -p`) as the agent. Built-in tools are disabled, only the browser MCP server
@@ -235,10 +304,10 @@ under test is attached, and the system prompt is our own:
 
 ```bash
 export ANTHROPIC_API_KEY=...
-.venv/bin/leanb-eval --estimate          # cost before anything runs
-.venv/bin/leanb-eval --quick             # 6 tasks, Playwright MCP vs lean, 1 run (~$1)
-.venv/bin/leanb-eval -y                  # all tasks × 6 modes × 3 runs (costly: check --estimate first)
-.venv/bin/leanb-eval --schema-tokens     # exact tool-definition tokens per mode
+.venv/bin/python -m evals.runner --estimate          # cost before anything runs
+.venv/bin/python -m evals.runner --quick             # 6 tasks, Playwright MCP vs lean, 1 run (~$1)
+.venv/bin/python -m evals.runner -y                  # all tasks × 6 modes × 3 runs (costly: check --estimate first)
+.venv/bin/python -m evals.runner --schema-tokens     # exact tool-definition tokens per mode
 ```
 
 - Tasks run against a local fixture site (`evals/fixtures/`), and **success is checked by the server**,
@@ -247,10 +316,10 @@ export ANTHROPIC_API_KEY=...
   automatic escalation.
 - The report is written to `evals/report.md`.
 
-## Development
+### Tests and layout
 
 ```bash
-.venv/bin/python -m pytest -q        # 385 passed, 3 skipped on 2026-11-16 (macOS arm64); local fixture site, both engines
+.venv/bin/python -m pytest -q        # 396 passed, 3 skipped on 2026-11-18 (macOS arm64); local fixture site, both engines
 .venv/bin/python scripts/snap.py login.html,orders.html obscura    # look at snapshots
 ```
 

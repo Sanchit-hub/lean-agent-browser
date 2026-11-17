@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.5.0 (2026-11-18): install and connect without help
+
+**Onboarding**
+- `leanb setup`: a guided first run. It checks the platform, downloads the pinned engines (asks first), writes a
+  commented default config only if none exists, runs the doctor, and registers Lean with Claude Code. It
+  shows the exact entry and asks before changing anything (`--yes` accepts every prompt). Safe to re-run.
+- Claude Code registration goes through `claude mcp add-json / get / remove` with the absolute path of the
+  running `leanb`, user scope by default. A second run changes nothing, a moved install updates the entry
+  instead of adding a second one, and other MCP servers are never touched.
+- `leanb doctor` reports each check as PASS, WARN, FAIL or NOT SUPPORTED with a fix line. New checks: platform
+  support, Python and dependencies, config validity (bad TOML, unknown keys, private network left on), an
+  MCP round trip through the real `leanb mcp` command, and the Claude Code entry (missing, or pointing to a
+  deleted install). `--json` gives the same result for bug reports, with home paths shortened to `~`.
+- `leanb uninstall` removes the engines and the `lean-browser` Claude Code entry after listing them
+  (`--all` also removes config and traces). `leanb --version`.
+- Opening a localhost or LAN address now says why it was blocked and how to allow it, instead of
+  `net::ERR_BLOCKED_BY_CLIENT`.
+
+**Packaging**
+- One version source (`lean_browser.__version__`); the MCP server reports it too (it said 0.1.0).
+- The wheel ships only `lean_browser`; `evals/` runs from a checkout (`python -m evals.runner` replaces
+  the `leanb-eval` script). A top-level `evals` package could clash with other packages.
+- Release workflow: build once, test that wheel on all three platforms, attach checksums, publish with PyPI
+  trusted publishing when a GitHub Release is published. Not published yet.
+- The clean-install test checks the wheel's contents, installs into a path with a space, runs `setup`,
+  `doctor --json` and pipx.
+
+**Docs**
+- README starts with Install for Claude Code, First task and Develop / contribute. The `memory` tool is in
+  the tools table, and the outdated "private repository" note is gone.
+- New: `docs/TROUBLESHOOTING.md`, `docs/UPGRADING.md`, `docs/RELEASING.md` (release checklist, Claude Code
+  acceptance test, first-time user test), `docs/BASELINE.md`; issue and PR templates.
+- Security docs say plainly that Playwright runs Chromium with its own sandbox off, and that dropping hidden
+  text does not prevent prompt injection.
+
 ## 0.4.0 (2026-11-16): 100-task benchmark and Linux
 
 **Benchmark**

@@ -16,7 +16,7 @@ autonomous agent.
 **Platforms:** macOS (Apple Silicon) and Linux (x86_64, arm64), both tested in CI since v0.4.0. Windows is
 out of scope. Only CI-tested platforms are listed as supported.
 
-## Implemented (verified in code and tests, 2026-11-16)
+## Implemented (verified in code and tests, 2026-11-18)
 
 | Area | What exists | Where |
 |---|---|---|
@@ -29,28 +29,29 @@ out of scope. Only CI-tested platforms are listed as supported.
 | Memory | Session-scoped notes with source URL, in-process only | `memory` tool |
 | Traces | Opt-in JSONL: run/step ids, outcome, recovery, error category; passwords, card/OTP/token-like fields and sensitive URL parameters redacted; page text opt-in; `leanb trace list / show / replay / export / delete` | `trace.py` |
 | Visual | `screenshot(annotate=true)` maps the image to ids | `session.py` |
-| Distribution | `install.sh`, `pip install` + `leanb install` + `leanb doctor`; CI on macOS 15, Ubuntu 24.04 x86_64 and arm64, each with a clean-install smoke test (wheel, fresh venv, MCP round trip) | `installer.py`, `scripts/smoke_clean_install.sh`, `.github/workflows/ci.yml` |
+| Distribution and onboarding (v0.5) | `pipx install` from a GitHub tag; `leanb setup` (engines, doctor, Claude Code registration through `claude mcp`, asks first, idempotent); `leanb doctor` with PASS/WARN/FAIL/NOT SUPPORTED, `--json` and an MCP round trip; `leanb uninstall`; `install.sh` for contributors; CI on macOS 15, Ubuntu 24.04 x86_64 and arm64 with a clean-install test (wheel contents, spaced path, setup, doctor, MCP, pipx); release workflow with trusted publishing (not run yet) | `onboarding.py`, `doctor.py`, `claude_code.py`, `installer.py`, `scripts/smoke_clean_install.sh`, `.github/workflows/` |
 | Benchmarks | Fixture suite of **100 tasks** in 9 categories, server-verified, each with a scripted reference solution; live suite (5 tasks); Lean vs Playwright MCP × 3 runs, agent-browser × 1; per-category success, tasks solved in every run, p95, failure categories; parallel runs (`--jobs`) | `evals/`, `evals/bench/`, `docs/benchmark.md` |
 
 ## Next (in order)
 
-1. **External release-candidate testing:** a few outside developers install it and complete a small set
-   of workflows.
-2. **Benchmark next steps:**
+1. **First-time user test (blocks a wide release):** three people who have never worked on Lean get only the
+   GitHub link and follow the README to a first Claude Code task, unaided (protocol in `docs/RELEASING.md`).
+   Fix repeated friction, then repeat.
+2. **PyPI (maintainer decision):** set up trusted publishing, run the release workflow to TestPyPI, then publish a
+   GitHub Release; switch the README to `pipx install lean-agent-browser`.
+3. **Benchmark next steps:**
    - tasks written by someone other than us, and a few real-site workflows with sandbox accounts
    - 3 runs for agent-browser (it has 1), and its CLI workflow as a separate row
    - false-success and false-recovery counters
-3. **Recovery metrics:** a stale-reference fixture set that measures recovery rate and false recovery.
-4. **Task context:**
+4. **Recovery metrics:** a stale-reference fixture set that measures recovery rate and false recovery.
+5. **Task context:**
    - `context()` across pagination (follow "next" while `new_only`)
    - the same structured records from a table view
-5. **Visual and DOM fusion:** suggest an annotated screenshot automatically when the DOM evidence is ambiguous
+6. **Visual and DOM fusion:** suggest an annotated screenshot automatically when the DOM evidence is ambiguous
    (canvas, unlabeled controls), and record why.
-6. **Session memory scopes:** split page, session and task state, with inspect and reset.
-7. **Launch prep (maintainer decisions):**
-   - make the repo public
-   - publish to PyPI (`lean-agent-browser` is free)
-   - record a 30–45 s demo
+7. **Session memory scopes:** split page, session and task state, with inspect and reset.
+8. **Launch prep (after the user test):**
+   - record a 30–45 s demo (install, connect, task, verified result)
    - write a launch post with the methodology
 
 ## Not now

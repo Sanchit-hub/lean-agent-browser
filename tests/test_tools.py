@@ -176,3 +176,11 @@ async def test_memory_keeps_facts_with_provenance_across_navigation(lb, base):
     assert (await lb.call("memory", {"action": "get", "key": "nope"}))[0].startswith("Error: no memory 'nope'")
     assert "deleted" in (await lb.call("memory", {"action": "delete", "key": "cheapest_order"}))[0]
     assert (await lb.recall()) == {}
+
+
+async def test_private_network_error_says_how_to_allow_it():
+    from lean_browser.tools import Config, LeanBrowser
+    async with LeanBrowser(Config(allow_private_network=False)) as lb:
+        out = await lb.call("open", {"url": "http://localhost:8123/"})
+    assert out[0].startswith("Error: blocked: localhost is a private-network address"), out
+    assert "allow_private_network = true" in out[0]

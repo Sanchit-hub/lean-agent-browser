@@ -128,6 +128,7 @@ async def test_private_network_blocked_on_both_engines(base):
 @pytest.mark.parametrize("host,private", [
     ("127.0.0.1", True), ("localhost", True), ("10.1.2.3", True), ("192.168.1.1", True),
     ("169.254.169.254", True), ("::1", True), ("0.0.0.0", True), ("api.localhost", True),
+    ("::ffff:127.0.0.1", True), ("::ffff:10.0.0.1", True), ("fd00::1", True),
     ("8.8.8.8", False), ("1.1.1.1", False),
 ])
 def test_is_private_host(host, private):

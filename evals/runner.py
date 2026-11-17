@@ -2,10 +2,10 @@
 total tokens, server-verified success, steps, time and browser memory.
 
 Usage:
-  leanb-eval --quick                       # 6 tasks, 1 run, aria + html (fast check)
-  leanb-eval --modes screenshot,html,aria  # all tasks, runs from config.toml
-  leanb-eval --estimate                    # print the cost estimate and exit
-  leanb-eval --schema-tokens               # count tool-definition tokens per mode and exit
+  python -m evals.runner --quick                       # 6 tasks, 1 run, aria + html (fast check)
+  python -m evals.runner --modes screenshot,html,aria  # all tasks, runs from config.toml
+  python -m evals.runner --estimate                    # print the cost estimate and exit
+  python -m evals.runner --schema-tokens               # count tool-definition tokens per mode and exit
 
 Prompt caching is OFF by default so modes compare on raw tokens. --cached repeats with
 top-level automatic caching on and reports cost-weighted tokens.

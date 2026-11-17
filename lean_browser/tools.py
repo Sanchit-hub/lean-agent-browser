@@ -283,10 +283,17 @@ class LeanBrowser:
         return json.loads(await self._text("memory", {"action": "get", "key": key}))[key]
 
     def _check_domain(self, url: str):
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        host = (parsed.hostname or "").lower()
+        if host and parsed.scheme in ("http", "https", "ws", "wss") and not self.config.allow_private_network:
+            from lean_browser.engine import is_private_host
+            if is_private_host(host):
+                raise ActionError(f"blocked: {host} is a private-network address (localhost, LAN or cloud metadata), "
+                                  "which Lean blocks by default. To test a local app, set allow_private_network = true "
+                                  "in ~/.lean-browser/config.toml or start Lean with --allow-private-network")
         if not self.config.allowed_domains:
             return
-        from urllib.parse import urlparse
-        host = (urlparse(url).hostname or "").lower()
         if not any(host == d or host.endswith("." + d) for d in self.config.allowed_domains):
             raise ActionError(f"{host} is not in allowed_domains")
 

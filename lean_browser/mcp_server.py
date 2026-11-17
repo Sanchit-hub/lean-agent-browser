@@ -1,6 +1,6 @@
-"""MCP server (stdio) exposing the 6 lean browser tools.
+"""MCP server (stdio) exposing the 7 lean browser tools.
 
-Claude Code:  claude mcp add lean-browser -- /path/to/.venv/bin/leanb mcp
+Claude Code:  leanb setup --client claude   (or: claude mcp add -s user lean-browser -- /absolute/path/to/leanb mcp)
 The browser starts lazily on the first tool call and shuts down when the client disconnects.
 """
 from __future__ import annotations
@@ -13,6 +13,7 @@ import mcp.types as types
 from mcp.server.lowlevel import Server
 from mcp.server.stdio import stdio_server
 
+from lean_browser import __version__
 from lean_browser.tools import INSTRUCTIONS, TOOLS, Config, LeanBrowser
 
 MCP_TOOLS = [types.Tool(name=t["name"], description=t["description"], input_schema=t["input_schema"]) for t in TOOLS]
@@ -55,7 +56,7 @@ def build_server(config: Config | None = None) -> Server:
                 content.append(types.TextContent(type="text", text=p))
         return types.CallToolResult(content=content, is_error=is_error)
 
-    return Server("lean-browser", version="0.1.0", instructions=INSTRUCTIONS, lifespan=lifespan,
+    return Server("lean-browser", version=__version__, instructions=INSTRUCTIONS, lifespan=lifespan,
                   on_list_tools=on_list_tools, on_call_tool=on_call_tool)
 
 

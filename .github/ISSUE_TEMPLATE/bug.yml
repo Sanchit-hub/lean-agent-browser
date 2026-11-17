@@ -1,0 +1,36 @@
+name: Bug report
+description: Something doesn't install, doesn't connect, or does the wrong thing on a page
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please don't paste passwords, cookies, API keys or private page content. Security problems go to
+        the private channel in SECURITY.md, not here. docs/TROUBLESHOOTING.md covers the common problems.
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `leanb doctor --json`
+      description: It shortens your home folder to ~ and contains no page content.
+      render: json
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What you ran and what happened
+      description: The command or prompt, the error text, and what you expected instead.
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How you installed it
+      options: [pipx from a GitHub tag, pipx from PyPI, source checkout (install.sh), other]
+    validations:
+      required: true
+  - type: input
+    id: client
+    attributes:
+      label: MCP client and version
+      placeholder: e.g. Claude Code 2.1.322

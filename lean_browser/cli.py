@@ -2,9 +2,11 @@
 
   leanb open <url> [--mode actions|read|full]     one-shot snapshot of a page
   leanb shell <url>                               interactive session (act/fill/snapshot/...)
+  leanb setup [--client claude|none] [--yes]      guided first run: engines, checks, Claude Code registration
+  leanb doctor [--json]                           check the install (engines, sandbox, MCP, Claude Code)
   leanb mcp                                       run the MCP server on stdio
   leanb install                                   download the engines (pinned, checksummed Obscura + Chromium)
-  leanb doctor                                    check the install (hashes, sandbox, both engines)
+  leanb uninstall [--all] [--yes]                 remove the engines and the Claude Code entry
   leanb trace list | show | replay | export | delete [run|latest|all]   traces (record with --trace)
   leanb bench [--quick] [--runs N] [--modes ...]  run the eval suite (needs the claude CLI or an API key)
 
@@ -99,45 +101,6 @@ async def cmd_shell(a):
                 print("unknown command — type help")
 
 
-async def cmd_doctor(a) -> int:
-    """Verify the Obscura binaries, start it sandboxed, and load a page in both engines."""
-    from lean_browser.engine import BrowserManager, EngineError, ObscuraProcess, find_obscura, verify_obscura
-    ok = True
-    page = "data:text/html,<title>ok</title><main><button>Ping</button></main>"
-    from lean_browser.engine import OBSCURA_SHA256, PLATFORM, sandbox_tool
-    b = find_obscura()
-    if not OBSCURA_SHA256:
-        print(f"obscura:  no pinned build for this platform ({PLATFORM or 'unsupported'}); Chromium serves every page")
-    elif not sandbox_tool():
-        print("obscura:  disabled: no sandbox found (install bubblewrap: apt install bubblewrap); Chromium serves every page")
-    elif not b:
-        print("obscura:  not installed (Chromium will serve every page) — run leanb install")
-    else:
-        try:
-            verify_obscura(b)
-            p = ObscuraProcess(b)
-            await asyncio.to_thread(p.start)
-            p.stop()
-            print(f"obscura:  {b} — hash OK, starts sandboxed on 127.0.0.1 with a token")
-        except EngineError as e:
-            ok = False
-            print(f"obscura:  FAILED — {e}")
-    for prefer in (["obscura"] if b else []) + ["chromium"]:
-        try:
-            async with BrowserManager(prefer=prefer) as bm:
-                tab = await bm.open(page)
-                title = await tab.page.title()
-                print(f"{prefer + ':':9} loads pages (engine used: {tab.engine}, title {title!r})")
-                if prefer == "obscura" and tab.engine != "obscura":
-                    ok = False
-                    print(f"          fell back: {tab.reason}")
-        except Exception as e:
-            ok = False
-            print(f"{prefer + ':':9} FAILED — {type(e).__name__}: {str(e).splitlines()[0][:150]}")
-    print("all good" if ok else "problems found")
-    return 0 if ok else 1
-
-
 def cmd_bench(a) -> int:
     """Thin wrapper over the eval drivers so the benchmark is one command."""
     import subprocess
@@ -165,6 +128,8 @@ def cmd_bench(a) -> int:
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="leanb", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    from lean_browser import __version__
+    ap.add_argument("--version", action="version", version=f"leanb {__version__}")
     ap.add_argument("--engine", choices=["obscura", "chromium"])
     ap.add_argument("--allow-private-network", action="store_true", help="allow localhost/LAN pages (dev testing)")
     ap.add_argument("--config", help="config file (default ~/.lean-browser/config.toml)")
@@ -177,7 +142,18 @@ def main(argv=None):
     p.add_argument("url")
     sub.add_parser("mcp", help="run the MCP server on stdio")
     sub.add_parser("install", help="download the engines (Obscura + Chromium) into ~/.lean-browser")
-    sub.add_parser("doctor", help="check the install")
+    p = sub.add_parser("doctor", help="check the install")
+    p.add_argument("--json", action="store_true", help="machine-readable output (home paths shortened to ~)")
+    p.add_argument("--no-mcp", action="store_true", help="skip the MCP server round trip")
+    p.add_argument("--no-claude", action="store_true", help="skip the Claude Code registration check")
+    p = sub.add_parser("setup", help="guided first run: engines, checks, Claude Code registration")
+    p.add_argument("--client", choices=["claude", "none"], help="MCP client to register (default: claude if installed)")
+    p.add_argument("--scope", choices=["user", "local", "project"], default="user",
+                   help="Claude Code scope (default user: every project)")
+    p.add_argument("-y", "--yes", action="store_true", help="accept every prompt (downloads, Claude Code registration)")
+    p = sub.add_parser("uninstall", help="remove the engines and the Claude Code entry (keeps config unless --all)")
+    p.add_argument("--all", action="store_true", help="also remove config, traces and everything in ~/.lean-browser")
+    p.add_argument("-y", "--yes", action="store_true", help="don't ask")
     p = sub.add_parser("trace", help="inspect recorded traces")
     p.add_argument("what", choices=["list", "show", "replay", "export", "delete"])
     p.add_argument("run", nargs="?", default="latest")
@@ -218,7 +194,14 @@ def main(argv=None):
         from lean_browser.installer import main as install_main
         sys.exit(install_main())
     elif a.cmd == "doctor":
-        sys.exit(asyncio.run(cmd_doctor(a)))
+        from lean_browser import doctor
+        sys.exit(asyncio.run(doctor.main(a.config, as_json=a.json, claude=not a.no_claude, mcp=not a.no_mcp)))
+    elif a.cmd == "setup":
+        from lean_browser.onboarding import run_setup
+        sys.exit(run_setup(a))
+    elif a.cmd == "uninstall":
+        from lean_browser.onboarding import run_uninstall
+        sys.exit(run_uninstall(a))
     elif a.cmd == "mcp":
         from lean_browser.mcp_server import serve_stdio
         asyncio.run(serve_stdio(_config(a)))

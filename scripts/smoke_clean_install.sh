@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # Clean-install smoke test (release validation, also run in CI):
 #   1. build the wheel from this checkout,
-#   2. install it into a brand-new venv (no repo on the path, no dev extras),
-#   3. leanb install (pinned Obscura + Chromium; skips pieces already verified in ~/.lean-browser),
-#   4. leanb doctor,
-#   5. the documented MCP client config: start `leanb mcp`, list tools, open a local page, act on it.
+#   2. check what the wheel contains (JS assets in, no top-level evals package),
+#   3. install it into a brand-new venv whose path contains a space (no repo on the path, no dev extras),
+#   4. leanb --version, leanb setup --yes (pinned Obscura + Chromium; skips pieces already verified),
+#   5. leanb doctor (engines, sandbox, MCP round trip) and doctor --json,
+#   6. the documented MCP client config: start `leanb mcp`, list tools, open a local page, act on it,
+#   7. if pipx is available: pipx install the same wheel and run leanb doctor from it.
 # macOS arm64 and Linux (x86_64, arm64).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -12,20 +14,41 @@ PY="$("${PYTHON:-python3}" -c "import sys; print(sys.executable)")"
 WORK="$(mktemp -d)"
 trap '[ -n "${SRV:-}" ] && kill "$SRV" 2>/dev/null; rm -rf "$WORK"' EXIT
 
-echo "==> building wheel"
-"$PY" -m pip wheel --quiet --no-deps -w "$WORK/dist" "$ROOT"
-WHEEL="$(ls "$WORK"/dist/lean_agent_browser-*.whl)"
+if [ -n "${WHEEL:-}" ]; then
+  echo "==> testing the given wheel $WHEEL"   # release workflow: test the exact artifact that gets published
+else
+  rm -rf "$ROOT/build"   # a stale setuptools build dir would leak old files into the wheel
+  echo "==> building wheel"
+  "$PY" -m pip wheel --quiet --no-deps -w "$WORK/dist" "$ROOT"
+  WHEEL="$(ls "$WORK"/dist/lean_agent_browser-*.whl)"
+fi
 
+echo "==> wheel contents"
+"$PY" - "$WHEEL" <<'PYEOF'
+import sys, zipfile
+names = zipfile.ZipFile(sys.argv[1]).namelist()
+for need in ("lean_browser/snapshot.js", "lean_browser/extract.js", "lean_browser/blocklist.txt", "lean_browser/cli.py"):
+    assert need in names, f"{need} missing from the wheel"
+bad = [n for n in names if n.startswith(("evals/", "tests/", "spike/"))]
+assert not bad, f"wheel ships non-package folders: {bad[:5]}"
+print(f"wheel OK: {len(names)} files")
+PYEOF
+
+VENV="$WORK/clean venv"   # a space in the path, as in many home folders
 echo "==> fresh venv + pip install $(basename "$WHEEL")"
-"$PY" -m venv "$WORK/venv"
-"$WORK/venv/bin/pip" install --quiet "$WHEEL"
+"$PY" -m venv "$VENV"
+"$VENV/bin/pip" install --quiet "$WHEEL"
+LEANB="$VENV/bin/leanb"
 
 cd "$WORK"   # nothing from the checkout is importable from here
-echo "==> leanb install"
-"$WORK/venv/bin/leanb" install
+echo "==> leanb --version"
+"$LEANB" --version | grep -q "^leanb [0-9]"
+echo "==> leanb setup --yes --client none"
+"$LEANB" setup --yes --client none
 echo "==> leanb doctor"
-"$WORK/venv/bin/leanb" doctor | tee "$WORK/doctor.txt"
+"$LEANB" doctor --no-claude | tee "$WORK/doctor.txt"
 grep -q "all good" "$WORK/doctor.txt"
+"$LEANB" doctor --no-claude --no-mcp --json | "$PY" -c 'import json,sys; d=json.load(sys.stdin); assert d["ok"] and d["install"] == "pip", d; print("doctor --json OK")'
 
 echo "==> MCP round trip"
 PORT=$("$PY" -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')
@@ -34,7 +57,7 @@ SRV=$!
 for _ in $(seq 1 60); do curl -fs "http://127.0.0.1:$PORT/api/state" >/dev/null && break; sleep 0.5; done
 curl -fs "http://127.0.0.1:$PORT/api/state" >/dev/null || { echo "fixture server did not start"; exit 1; }
 curl -fs "http://127.0.0.1:$PORT/b/faq.html" >/dev/null || { echo "fixture server cannot serve benchmark pages"; exit 1; }
-"$WORK/venv/bin/python" -I - "$WORK/venv/bin/leanb" "http://127.0.0.1:$PORT" <<'PYEOF'
+"$VENV/bin/python" -I - "$LEANB" "http://127.0.0.1:$PORT" <<'PYEOF'
 import asyncio, re, sys
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
@@ -59,4 +82,15 @@ async def main():
 
 asyncio.run(main())
 PYEOF
+if command -v pipx >/dev/null; then
+  echo "==> pipx install $(basename "$WHEEL")"
+  export PIPX_HOME="$WORK/pipx" PIPX_BIN_DIR="$WORK/pipx-bin"
+  pipx install --python "$PY" "$WHEEL" >/dev/null
+  "$PIPX_BIN_DIR/leanb" --version
+  "$PIPX_BIN_DIR/leanb" doctor --no-claude | tee "$WORK/doctor-pipx.txt"
+  grep -q "all good" "$WORK/doctor-pipx.txt"
+  grep -q "(pipx)" "$WORK/doctor-pipx.txt"
+else
+  echo "==> pipx not installed; skipped the pipx install check"
+fi
 echo "clean install smoke test passed"

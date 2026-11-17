@@ -558,7 +558,7 @@ separately because live sites change.
      tokens (cache reads count at their discounted rate). Real agents use caching, and caching
      shrinks the cost of tool schemas and history, so this shows the saving people actually get.
   Also report the tool-schema token count per mode.
-- `uv run leanb-eval --quick` runs 1 repetition of 6 representative tasks in Lean and
+- `python -m evals.runner --quick` runs 1 repetition of 6 representative tasks in Lean and
   Playwright MCP modes only, for fast checks during development. The full run
   (all tasks × 6 modes × 3 runs, plus a cached repeat) is for milestones only. The runner prints
   an estimated API cost and asks for confirmation before starting a full run.
@@ -572,7 +572,7 @@ separately because live sites change.
 
 `evals/report.md` with per-task and summary tables, plus `evals/results/*.jsonl` raw logs
 (one line per step) so the numbers can be re-checked.
-`uv run leanb-eval` runs it all. Requires `ANTHROPIC_API_KEY` in the environment.
+`python -m evals.runner` runs it all. Requires `ANTHROPIC_API_KEY` in the environment.
 
 ---
 

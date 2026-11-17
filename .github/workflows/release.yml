@@ -1,0 +1,92 @@
+name: Release
+
+# Builds the sdist and wheel once, tests that exact wheel on every supported platform, then publishes it.
+# Runs when a GitHub Release is published (by a maintainer), or by hand to TestPyPI.
+# Publishing uses PyPI trusted publishing (OIDC): no API token is stored in this repository.
+# One-time setup on pypi.org / test.pypi.org: add a trusted publisher for this repo, workflow
+# release.yml, environment "pypi" / "testpypi".
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Where to publish"
+        type: choice
+        options: [testpypi, none]
+        default: testpypi
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Build sdist and wheel
+        run: python -m pip install -q build==1.5.0 && python -m build
+      - name: Version matches the release tag
+        if: github.event_name == 'release'
+        run: |
+          v=$(python -c "import re; print(re.search(r'__version__ = \"(.+?)\"', open('lean_browser/__init__.py').read())[1])")
+          [ "v$v" = "${{ github.event.release.tag_name }}" ] || { echo "tag ${{ github.event.release.tag_name }} != version $v"; exit 1; }
+      - name: Checksums
+        run: cd dist && sha256sum * | tee SHA256SUMS
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: dist
+          path: dist/
+
+  test:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: dist
+          path: dist/
+      - name: Linux prerequisites (bubblewrap, Chromium libraries)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q bubblewrap
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          python -m pip install -q playwright==1.64.1 && sudo "$(which python)" -m playwright install-deps chromium
+      - name: Clean install of the built wheel (setup, doctor, MCP round trip, pipx)
+        run: WHEEL="$(ls dist/*.whl)" PYTHON=python3 ./scripts/smoke_clean_install.sh
+
+  publish:
+    needs: test
+    if: github.event_name == 'release' || inputs.target == 'testpypi'
+    runs-on: ubuntu-24.04
+    environment: ${{ github.event_name == 'release' && 'pypi' || 'testpypi' }}
+    permissions:
+      id-token: write   # trusted publishing
+      contents: write   # attach checksums to the GitHub release
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: dist
+          path: dist/
+      - name: Attach checksums to the release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" dist/* --repo "${{ github.repository }}" --clobber
+      - run: rm dist/SHA256SUMS
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # v1.14.3
+        with:
+          repository-url: ${{ github.event_name == 'release' && 'https://upload.pypi.org/legacy/' || 'https://test.pypi.org/legacy/' }}

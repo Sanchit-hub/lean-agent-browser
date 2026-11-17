@@ -3,7 +3,7 @@
 ## Reporting a vulnerability
 
 Please **don't open a public issue**. Use GitHub's private vulnerability reporting
-(Security tab → "Report a vulnerability") on this repository once it is public. Include steps to reproduce and the
+(Security tab → "Report a vulnerability") on this repository. Include steps to reproduce and the
 impact. Expect a first reply within a week.
 
 ## What the project protects against
@@ -43,7 +43,9 @@ impact. Expect a first reply within a week.
 
 ## Known limits
 
-- The sandbox only applies to Obscura. Chromium is Playwright's bundled build with a throwaway profile.
+- The sandbox only applies to Obscura. Chromium is Playwright's bundled build with a throwaway profile, and
+  Playwright starts it with Chromium's own sandbox turned off. Pages that fall back to Chromium are not
+  OS-isolated by Lean.
 - On Linux, bubblewrap can't restrict which ports Obscura connects out to (macOS can, for `localhost_only`).
   The private-network block still applies on both engines.
 - Visible text written to manipulate agents still reaches the agent, inside the untrusted wrapper.
