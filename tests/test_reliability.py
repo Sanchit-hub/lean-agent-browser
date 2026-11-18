@@ -24,8 +24,9 @@ def base():
     srv.shutdown()
 
 
-async def _session(base, engine, **kw):
-    urllib.request.urlopen(base + "/api/reset").read()
+async def _session(base, engine, keep=False, **kw):
+    if not keep:
+        urllib.request.urlopen(base + "/api/reset").read()
     bm = BrowserManager(allow_private_network=True, prefer=engine, init_scripts=[SETTLE_INIT_JS],
                         obscura_init_scripts=[OBSCURA_DIALOG_SHIM])
     await bm.start()
@@ -150,6 +151,78 @@ async def test_blocked_submission_can_be_fixed_and_retried(s):
     u, p = idof(out, 'textbox "Username"'), idof(out, 'textbox "Password"')
     res = await s.fill_form({u: "demo", p: "demo-pass-123"}, submit=True)
     assert res.startswith("status: verified"), res
+
+
+@pytest.fixture
+def keystore(tmp_path, monkeypatch):
+    monkeypatch.setenv("LEANB_STATE_DIR", str(tmp_path / "state"))
+    return tmp_path / "state" / "action_keys.json"
+
+
+async def test_action_key_blocks_a_repeat_in_a_new_session(s, keystore):
+    out = await s.open(s.base + "/order.html")
+    res = await s.act("click", idof(out, 'button "Place order"'), key="order-1")
+    assert res.startswith("status: verified"), res
+    assert oct(keystore.stat().st_mode & 0o777) == "0o600"
+    saved = json.loads(keystore.read_text())["order-1"]
+    assert saved["status"] == "verified" and saved["url"].endswith("/order.html")
+    bm2, s2 = await _session(s.base, s.engine, keep=True)
+    try:
+        out = await s2.open(s.base + "/order.html")
+        place = idof(out, 'button "Place order"')
+        preview = await s2.act("click", place, key="order-1", dry_run=True)
+        assert json.loads(preview)["requires_confirmation"] is True
+        with pytest.raises(ActionError, match=r'duplicate: key "order-1" was already used .*status: verified'):
+            await s2.act("click", place, key="order-1")
+        assert s2.last_outcome["status"] == "blocked" and s2.last_outcome["executed"] is False
+        assert len(subs(s.base, "order")) == 1
+        await s2.act("click", place)  # no key: the old per-session guard only, so it runs
+        assert len(subs(s.base, "order")) == 2
+        out = await s2.open(s.base + "/order.html")
+        res = await s2.act("click", idof(out, 'button "Place order"'), "repeat", key="order-1")
+        assert res.startswith("status: verified") and len(subs(s.base, "order")) == 3
+    finally:
+        await bm2.close()
+
+
+async def test_action_key_does_not_block_after_blocked_or_unverified(s, keystore):
+    out = await s.open(s.base + "/login.html")
+    u, p = idof(out, 'textbox "Username"'), idof(out, 'textbox "Password"')
+    res = await s.fill_form({u: "demo", p: "nope"}, submit=True, key="login-1")
+    assert res.startswith("status: blocked"), res
+    assert json.loads(keystore.read_text())["login-1"]["status"] == "blocked"
+    bm2, s2 = await _session(s.base, s.engine, keep=True)
+    try:
+        out = await s2.open(s.base + "/login.html")
+        u, p = idof(out, 'textbox "Username"'), idof(out, 'textbox "Password"')
+        res = await s2.fill_form({u: "demo", p: "demo-pass-123"}, submit=True, key="login-1")
+        assert res.startswith("status: verified"), res
+        out = await s.open(s.base + "/login.html")  # back in the first session: only the key blocks it now
+        u, p = idof(out, 'textbox "Username"'), idof(out, 'textbox "Password"')
+        with pytest.raises(ActionError, match='duplicate: key "login-1"'):
+            await s.fill_form({u: "demo", p: "demo-pass-123"}, submit=True, key="login-1")
+        res = await s.fill_form({u: "demo", p: "demo-pass-123"}, submit="repeat", key="login-1")
+        assert res.startswith("status: verified"), res
+        assert len(subs(s.base, "login")) == 3  # the rejected try, the first real login and the repeat
+    finally:
+        await bm2.close()
+
+
+def test_action_key_store_expiry_and_strongest_result(tmp_path):
+    import time
+    from lean_browser.action_keys import ActionKeys
+    ks = ActionKeys(tmp_path)
+    ks.record("a", "unverified", "https://x/")
+    assert ks.get("a")["status"] == "unverified" and ks.blocking("a") is None
+    ks.record("a", "timed_out", "https://x/")
+    ks.record("a", "blocked", "https://x/")  # a weaker later result never erases a blocking one
+    assert ks.blocking("a")["status"] == "timed_out"
+    data = json.loads(ks.path.read_text())
+    data["a"]["time"] = time.time() - 25 * 3600
+    ks.path.write_text(json.dumps(data))
+    assert ks.get("a") is None
+    ks.path.write_text("not json")
+    assert ks.get("a") is None
 
 
 def test_retry_safety_classes():

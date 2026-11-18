@@ -61,7 +61,13 @@ make an unrelated click look verified. Pass `expect=` when it matters.
 - Field actions retry once after a re-render, and only after checking the field isn't already in the wanted
   state. Submit-like actions are never retried.
 - Repeating a submit-like action on the same page after `verified`, `ambiguous` or `timed_out` is blocked
-  unless `value="repeat"`. The guard is per session and per page.
+  unless `value="repeat"` (`submit="repeat"` for `fill_form`). The guard is per session and per page.
+- An optional `key` on `act` and `fill_form` names the action (for example `order-123`). If a submit-like
+  action with that key already ended `verified`, `ambiguous` or `timed_out`, the call is `blocked` with the
+  earlier status, time and URL, unless `value="repeat"` / `submit="repeat"`. A `blocked` or `unverified`
+  result doesn't block, and never replaces one that does. Keys live in `~/.lean-browser/action_keys.json`
+  (or `$LEANB_STATE_DIR`), mode 600, for 24 hours, so the guard survives new pages, sessions and restarts.
+  Writes are atomic (temp file + `os.replace`) under a file lock. Without a key nothing changes.
 
 ## Network boundary
 
@@ -81,7 +87,7 @@ Limit: if `HTTP(S)_PROXY` is set in the environment, the guard proxy is off and 
 |---|---|---|
 | Verification honesty: 21 action cases + 6 `expect=` cases × 2 engines, false-verified must be 0 | `session.py` `_signals`, `_status`, `_after` | `tests/test_verification.py`, `scripts/verification_matrix.py` (repeated runs; weekly `reliability.yml`) |
 | Outcomes on real flows: rejected login, server rejection, slow submit, `expect=` | `session.py` | `tests/test_reliability.py` |
-| Duplicate guard, retry-safety classes, dry run | `session.py` `act`, `fill_form`, `retry_safety` | `tests/test_reliability.py` |
+| Duplicate guard, action keys, retry-safety classes, dry run | `session.py` `act`, `fill_form`, `retry_safety`; `action_keys.py` | `tests/test_reliability.py` |
 | Recovery after re-render, reordered lists | `session.py` `_resolve_or_recover`, `_perform_guarded` | `tests/test_reliability.py`, `tests/test_session.py` |
 | Private network: URL check, both engines, redirect hops | `tools.py`, `engine.py` `_route`, `netguard.py` | `tests/test_engine.py`, `tests/test_tools.py` |
 | Uploads limited to allowed folders | `session.py` `_perform` (resolved path) | `tests/test_session.py` |

@@ -68,5 +68,5 @@ Checked and found sound, now with tests:
 | P2 | Dedicated DNS-rebinding test | The guard covers it, but there is no test | Resolver fixture that changes its answer between lookups |
 | P2 | Success words in more languages | Non-English success ends `unverified` | Add words with fixtures per language |
 | P2 | Chromium sandbox on where available | Isolation parity | Try `chromium_sandbox=True` with a fallback and a doctor line |
-| P3 | Caller-supplied action key for the duplicate guard | Guard across sessions and restarts | Design first; needs a schema change |
+| P3 | Caller-supplied action key for the duplicate guard | Guard across sessions and restarts | Done (Unreleased): optional `key` on `act` / `fill_form` |
 | P3 | Real-site canary suite (read-only) | Fixture results don't prove real sites | 10 public read-only pages, weekly |

@@ -24,6 +24,7 @@ from pathlib import Path
 
 from playwright.async_api import ElementHandle, Page
 
+from lean_browser.action_keys import ActionKeys
 from lean_browser.diff import diff
 from lean_browser.engine import BrowserManager, Tab
 from lean_browser.settle import PageUnresponsive, settle
@@ -355,6 +356,11 @@ def _short(e: Exception) -> str:
     return msg[:200]
 
 
+def _key_note(key: str, e: dict) -> str:
+    when = time.strftime("%Y-%m-%d %H:%M:%SZ", time.gmtime(e["time"]))
+    return f'"{key}" was already used {int(time.time() - e["time"])}s ago ({when}) on {e.get("url")} (status: {e.get("status")})'
+
+
 class Session:
     def __init__(self, bm: BrowserManager, *, upload_dirs: list[str | Path] | None = None,
                  snapshot_timeout_s: float = 2.0, settle_cap_s: float = 5.0, confirm_risky: bool = False):
@@ -371,6 +377,7 @@ class Session:
         self.last_outcome: dict | None = None  # machine-readable result of the last act/fill_form
         self._unsafe_log: dict[tuple, tuple[float, str]] = {}  # duplicate guard: key -> (time, status)
         self.duplicate_window_s = 600
+        self.action_keys = ActionKeys()  # caller-supplied keys: the guard across pages, sessions and restarts
 
     # ---------- tabs ----------
     @property
@@ -647,7 +654,7 @@ class Session:
             raise ActionError(f"unknown action {action!r}")
 
     async def act(self, action: str, id: int | None = None, value=None, expect: str | None = None,
-                  dry_run: bool = False) -> str:
+                  dry_run: bool = False, key: str | None = None) -> str:
         action = action.lower().strip()
         self.last_outcome = None
         if dry_run and action in ("back", "forward", "reload", "tab", "dialog", "wait_for"):
@@ -696,7 +703,10 @@ class Session:
         prior = self._unsafe_log.get(dup) if dup else None
         if prior and (time.time() - prior[0] > self.duplicate_window_s or prior[1] not in ("verified", "ambiguous", "timed_out")):
             prior = None
-        needs_confirm = (risky and self.confirm_risky and v not in ("confirm", "repeat")) or (prior is not None and v != "repeat")
+        key = str(key) if key and safety == "unsafe" else None
+        kprior = self.action_keys.blocking(key) if key else None
+        needs_confirm = (risky and self.confirm_risky and v not in ("confirm", "repeat")) or \
+            ((prior is not None or kprior is not None) and v != "repeat")
         if dry_run:
             ctx = {k: (entry or {}).get("fp", {}).get(k) for k in ("form", "ctx", "lm") if (entry or {}).get("fp", {}).get(k)}
             return json.dumps({
@@ -705,6 +715,7 @@ class Session:
                 "recovered": note.strip() or None, "risk": risk, "retry_safety": safety,
                 "requires_confirmation": needs_confirm,
                 **({"previous": f"same action {int(time.time() - prior[0])}s ago, status {prior[1]}"} if prior else {}),
+                **({"previous_key": _key_note(key, kprior)} if kprior else {}),
                 "note": "preview only; nothing was dispatched, and the page can change before you execute"},
                 ensure_ascii=False)
         base_outcome = {"action": action, "target": target, "retry_safety": safety, "risk": risk,
@@ -721,6 +732,11 @@ class Session:
             raise ActionError(f'duplicate: {(entry or {}).get("role", "element")} "{name}" was already used on this page '
                               f'{ago}s ago (status: {prior[1]}). Check the page first; to really do it again call act '
                               'with value="repeat"')
+        if kprior is not None and v != "repeat":
+            self.last_outcome = {**base_outcome, "executed": False, "status": "blocked",
+                                 "evidence": [f"duplicate of key {_key_note(key, kprior)}"]}
+            raise ActionError(f"duplicate: key {_key_note(key, kprior)}. Check the page first; to really do it again "
+                              'call act with value="repeat"')
         if action == "click" or (action == "press" and str(value or "").lower() in SUBMIT_KEYS):
             el = (await ts.page.evaluate_handle(RESOLVE_JS, int(id))).as_element() if id is not None else None
             bad = await self._form_invalid(el, action == "press") if el else None
@@ -738,12 +754,15 @@ class Session:
         await self._sync_dialog_policy(ts)
         ts.nav_status = None
         rec = base_outcome["recovery"]
+        url_before = ts.page.url
         uncertain, id = await self._perform_guarded(ts, action, id, value if action != "click" else None, entry, safety, rec)
         exp = {"kind": "action", "action": action, "id": id, "value": value, "entry": entry, "risky": risky,
                "safety": safety, "expect": expect, "uncertain": uncertain, "base": base_outcome}
         out = await self._after(ts, before, tabs_before, note, exp)
         if dup and self.last_outcome:
             self._unsafe_log[dup] = (time.time(), self.last_outcome["status"])
+        if key and self.last_outcome:
+            self.action_keys.record(key, self.last_outcome["status"], url_before)
         return out
 
     async def _page_lines(self, ts: TabState) -> set[str]:
@@ -1206,7 +1225,8 @@ class Session:
             evidence.append("it may still take effect: check the page before repeating")
         return self._finish(expect, word, evidence)
 
-    async def fill_form(self, fields: dict, submit=False, expect: str | None = None, dry_run: bool = False) -> str:
+    async def fill_form(self, fields: dict, submit=False, expect: str | None = None, dry_run: bool = False,
+                        key: str | None = None) -> str:
         ts = self.cur
         self.last_outcome = None
         before = ts.snapper.last or await self._take(ts)
@@ -1219,6 +1239,8 @@ class Session:
         if prior and (time.time() - prior[0] > self.duplicate_window_s or prior[1] not in ("verified", "ambiguous", "timed_out")):
             prior = None
         repeat = str(submit).lower() == "repeat" if isinstance(submit, str) else False
+        key = str(key) if key and submit else None
+        kprior = self.action_keys.blocking(key) if key else None
         if dry_run:
             out = {"executed": False, "action": "fill_form",
                    "fields": [{"id": int(k), "role": (idx.get(int(k)) or {}).get("role"), "name": (idx.get(int(k)) or {}).get("name"),
@@ -1226,12 +1248,14 @@ class Session:
                               for k, v in fields.items()],
                    "submit": bool(submit), "risk": "medium" if submit else "low",
                    "retry_safety": "unsafe" if submit else "conditional",
-                   "requires_confirmation": prior is not None,
+                   "requires_confirmation": prior is not None or kprior is not None,
                    "note": "preview only; nothing was typed or submitted, and the page can change before you execute"}
             if missing:
                 out["unknown_ids"] = missing
             if prior:
                 out["previous"] = f"same form submitted {int(time.time() - prior[0])}s ago, status {prior[1]}"
+            if kprior:
+                out["previous_key"] = _key_note(key, kprior)
             return json.dumps(out, ensure_ascii=False)
         base = {"action": "fill_form", "target": {"form": form_key, "fields": len(fields)},
                 "retry_safety": "unsafe" if submit else "conditional", "risk": "medium" if submit else "low", "recovery": []}
@@ -1241,9 +1265,15 @@ class Session:
                                  "evidence": [f"duplicate of a submission {ago}s ago (status {prior[1]})"]}
             raise ActionError(f"duplicate: this form was already submitted from this page {ago}s ago (status: {prior[1]}). "
                               'Check the page first; to really submit again pass submit="repeat"')
+        if kprior is not None and not repeat:
+            self.last_outcome = {**base, "executed": False, "status": "blocked",
+                                 "evidence": [f"duplicate of key {_key_note(key, kprior)}"]}
+            raise ActionError(f"duplicate: key {_key_note(key, kprior)}. "
+                              'Check the page first; to really submit again pass submit="repeat"')
         if repeat:
             submit = True
         tabs_before = len(self.tabs)
+        url_before = ts.page.url
         await self._sync_dialog_policy(ts)
         errors = []
         for raw_id, value in fields.items():
@@ -1312,6 +1342,8 @@ class Session:
         out = await self._after(ts, before, tabs_before, prefix, exp)
         if dup and exp["submitted"] and self.last_outcome:
             self._unsafe_log[dup] = (time.time(), self.last_outcome["status"])
+        if key and exp["submitted"] and self.last_outcome:
+            self.action_keys.record(key, self.last_outcome["status"], url_before)
         return out
 
     async def extract(self, kind: str = "auto", within: int | None = None, fields: list[str] | None = None,
