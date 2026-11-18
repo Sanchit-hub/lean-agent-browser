@@ -244,6 +244,7 @@ async def test_action_key_claim_released_or_kept_after_an_error(s, keystore, mon
     ambiguous, so a blind retry with the same key is blocked."""
     out = await s.open(s.base + "/order.html")
     place = idof(out, 'button "Place order"')
+    real_perform = s._perform_guarded
 
     async def refused(*a, **k):
         s.last_outcome = {"executed": False, "status": "blocked"}
@@ -260,7 +261,8 @@ async def test_action_key_claim_released_or_kept_after_an_error(s, keystore, mon
     with pytest.raises(RuntimeError):
         await s.act("click", place, key="order-x")
     assert json.loads(keystore.read_text())["order-x"]["status"] == "ambiguous"
-    monkeypatch.undo()
+    # Restore only the dispatch; monkeypatch.undo() would also drop LEANB_STATE_DIR and read the real store.
+    monkeypatch.setattr(s, "_perform_guarded", real_perform)
     with pytest.raises(ActionError, match='duplicate: key "order-x"'):
         await s.act("click", place, key="order-x")
     assert len(subs(s.base, "order")) == 0
