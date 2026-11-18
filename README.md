@@ -221,7 +221,8 @@ agent ──MCP / CLI / Python──▶  7 tools  ──▶  snapshot · act · 
 - A dry run reflects the page at that moment; the page can change before you execute.
 - This release has not yet been tested by outside developers, and it is not on PyPI yet.
 - Obscura 0.2.7 can't upload files, type into rich-text editors, open popups, read cross-origin iframes,
-  run scripts in srcdoc iframes or reach nested iframes. Those pages run on Chromium automatically.
+  run scripts in srcdoc iframes, reach nested iframes or connect WebSockets. Those pages run on Chromium
+  automatically (a WebSocket opened only after a click is reported, and the next `open` uses Chromium).
 
 See [`ROADMAP.md`](ROADMAP.md) for what's next.
 

@@ -345,7 +345,7 @@ def _no_env_proxy(monkeypatch):
 # ever made (neither the guard nor the server sees one), so nothing is sent or received. Not a guard
 # bypass (nothing reaches the network), but WebSockets don't work on Obscura and such pages are not routed
 # to Chromium. strict: this starts failing, as a reminder, once Obscura really connects.
-_OBSCURA_WS_STUB = pytest.mark.xfail(strict=True, reason="Obscura 0.2.6 WebSocket is a stub: fake open, no connection")
+_OBSCURA_WS_STUB = pytest.mark.xfail(strict=True, reason="Obscura cannot connect WebSockets: Lean makes them fail honestly there (pages that open one at load move to Chromium)")
 _ENGINES_WS_WORKS = [pytest.param(e, marks=_OBSCURA_WS_STUB) if e == "obscura" else e for e in _ENGINES]
 
 

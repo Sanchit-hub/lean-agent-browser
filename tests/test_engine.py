@@ -78,6 +78,7 @@ async def test_simple_page_stays_on_obscura(base):
     ("/apply.html", "file-upload"),
     ("/comment.html", "contenteditable"),
     ("/xframe.html", "cross-origin-iframe"),
+    ("/live.html", "websocket"),  # Obscura's WebSocket is a stub that fakes onopen
 ])
 async def test_feature_routing_to_chromium(base, path, why):
     async with BrowserManager(allow_private_network=True) as bm:
@@ -390,3 +391,23 @@ async def test_chromium_falls_back_without_os_sandbox(monkeypatch):
         c = doctor.check_chromium_sandbox({"sandboxed": False, "why": bm.chromium_sandbox_note})
         assert c.status == doctor.WARN and "Unset LEANB_CHROMIUM_SANDBOX" in c.fix
     assert doctor.check_chromium_sandbox({"sandboxed": True, "why": ""}).status == doctor.PASS
+
+
+@needs_obscura
+async def test_websocket_on_obscura_fails_honestly_and_moves_the_domain(base):
+    """Obscura's own WebSocket fakes a successful open. Lean makes it fail honestly there, tells the caller after
+    an action that opened one, and opens that host in Chromium from then on."""
+    from lean_browser.session import OBSCURA_DIALOG_SHIM, Session
+    from lean_browser.settle import SETTLE_INIT_JS
+    async with BrowserManager(allow_private_network=True, init_scripts=[SETTLE_INIT_JS],
+                              obscura_init_scripts=[OBSCURA_DIALOG_SHIM]) as bm:
+        s = Session(bm)
+        out = await s.open(base + "/live-button.html")
+        assert "engine: obscura" in out
+        import re
+        btn = int(re.search(r'(\d+): button "Start chat"', out).group(1))
+        res = await s.act("click", btn)
+        assert "Chat connected" not in res, res
+        assert "can't connect" in res and "WebSocket" in res, res
+        out = await s.open(base + "/live-button.html")
+        assert "engine: chromium" in out and "websocket" in out, out[:300]

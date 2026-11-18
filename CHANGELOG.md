@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- WebSockets on Obscura: its `WebSocket` fakes a successful open and never connects, so a live page looked
+  connected. Lean now makes it fail honestly there, routes pages that open one at load to Chromium, and after an
+  action that opens one says so and opens that host in Chromium from then on.
 - `act` and `fill_form` take an optional `key` (for example `order-123`). A submit-like action whose key
   already ended `verified`, `ambiguous` or `timed_out` is blocked, across pages, sessions and restarts, for
   24 hours, unless `value="repeat"` / `submit="repeat"`. Keys are stored in `~/.lean-browser/action_keys.json`

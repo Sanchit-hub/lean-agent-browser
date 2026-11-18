@@ -69,6 +69,25 @@ OBSCURA_SEARCH = [
     _VENDOR if OBSCURA_VERSION == DEFAULT_OBSCURA_VERSION else None,
 ]
 
+# Obscura's WebSocket is a stub: it fires onopen at once and never connects, so a page would think it is live.
+# On Obscura this init script replaces it with an honest failure (error + close, readyState CLOSED) and marks the
+# page, so the routing probe moves pages that open one at load to Chromium, and Session moves the domain after
+# an action opens one.
+WS_MARK_JS = """(() => { if (!window.WebSocket) return;
+  class LeanWebSocket extends EventTarget {
+    constructor(url, protocols) { super(); window.__leanWebSocket = true;
+      this.url = String(url); this.readyState = 3; this.protocol = ''; this.extensions = ''; this.bufferedAmount = 0;
+      this.binaryType = 'blob'; this.onopen = this.onmessage = this.onerror = this.onclose = null;
+      setTimeout(() => { const e = new Event('error'); this.onerror && this.onerror(e); this.dispatchEvent(e);
+        const c = new Event('close'); c.code = 1006; c.reason = 'WebSocket unsupported on this engine'; c.wasClean = false;
+        this.onclose && this.onclose(c); this.dispatchEvent(c); }, 0); }
+    send() { throw new DOMException('WebSocket is closed', 'InvalidStateError'); }
+    close() {}
+  }
+  for (const [k, v] of [['CONNECTING', 0], ['OPEN', 1], ['CLOSING', 2], ['CLOSED', 3]]) {
+    LeanWebSocket[k] = v; LeanWebSocket.prototype[k] = v; }
+  window.WebSocket = LeanWebSocket; })();"""
+
 # JS probe run after navigation on Obscura. Each key maps to a spike-verified failure.
 ROUTING_PROBE = """() => {
   const vis = el => { const r = el.getBoundingClientRect(); const cs = getComputedStyle(el);
@@ -85,6 +104,7 @@ ROUTING_PROBE = """() => {
   if (frames.some(f => f.hasAttribute('srcdoc'))) out.push('srcdoc-iframe');  // Obscura runs no scripts in srcdoc frames
   if (frames.some(f => { try { return !!(f.contentDocument && f.contentDocument.querySelector('iframe')); } catch (e) { return false; } }))
     out.push('nested-iframe');  // Obscura loads the inner frame but its elements can't be reached
+  if (window.__leanWebSocket) out.push('websocket');  // set by WS_MARK_JS
   return out;
 }"""
 
@@ -445,7 +465,7 @@ class BrowserManager:
             self._obscura_browser = await self._pw.chromium.connect_over_cdp(
                 self._obscura.endpoint, headers=self._obscura.headers, timeout=15000)
             self._obscura_ctx = await self._obscura_browser.new_context(viewport=self.viewport)
-            for js in self.init_scripts + self.obscura_init_scripts:
+            for js in [WS_MARK_JS] + self.init_scripts + self.obscura_init_scripts:
                 await self._obscura_ctx.add_init_script(js)
         except Exception as e:
             self._obscura_broken = f"obscura unavailable: {e}"

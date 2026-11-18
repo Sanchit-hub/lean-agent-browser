@@ -1011,10 +1011,27 @@ class Session:
         if log:
             ts.dialog_policy = "accept"
 
+    async def _websocket_note(self, ts: TabState) -> str:
+        """Obscura can't connect WebSockets (Lean makes them fail honestly there). If an action made the page open
+        one, later pages on this host open in Chromium, and the caller is told."""
+        if ts.tab.engine != "obscura":
+            return ""
+        try:
+            used = await asyncio.wait_for(ts.page.evaluate("() => window.__leanWebSocket === true"), 2)
+        except Exception:  # noqa: BLE001 - a missing answer just means no note
+            return ""
+        host = urlparse(ts.page.url).hostname or ""
+        if not used or self.bm.domain_engine.get(host, ("",))[0] == "chromium":
+            return ""
+        self.bm.domain_engine[host] = ("chromium", "websocket")
+        return ("note: this page tried to open a WebSocket, which the obscura engine can't connect; "
+                f"open(url) again to load {host} in chromium\n")
+
     async def _after(self, ts: TabState, before: Snapshot, tabs_before: int, prefix: str = "",
                      expect: dict | None = None) -> str:
         await asyncio.sleep(0.05)
         settled = await self._settle(ts)
+        prefix += await self._websocket_note(ts)
         if len(self.tabs) > tabs_before:
             return await self._new_tab_result(ts, prefix, expect)
         await self._drain_dialog_shim(ts)

@@ -56,7 +56,7 @@ Checked and found sound, now with tests:
 | Profile | temp dir, deleted on exit | throwaway context |
 | Form validation before submit | Lean's check (Obscura has none) | Lean's check (browser has its own too) |
 | Native dialogs | Lean's shim records them | Playwright events |
-| File uploads, rich-text editors, popups, cross-origin / srcdoc / nested iframes | routed to Chromium before acting | native |
+| File uploads, rich-text editors, popups, cross-origin / srcdoc / nested iframes, WebSockets | routed to Chromium before acting (WebSockets opened after load: honest failure, then Chromium for that host) | native |
 | Fallback visible to the caller | — | `engine: chromium (reason)` in every result |
 
 ## Backlog (prioritised)

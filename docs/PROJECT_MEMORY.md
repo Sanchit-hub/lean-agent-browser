@@ -122,6 +122,8 @@ verified against evidence, safe recovery. Token efficiency stays an advantage; r
 | `~/.claude/projects/-Users-sanchitthareja-Desktop-lean/memory/` | Claude's memory notes for this project |
 
 ## Obscura quirks we work around
+- `WebSocket` is a stub that fires `open` and never connects. `WS_MARK_JS` (engine.py) replaces it with an
+  honest failure and marks the page; the routing probe and `Session._websocket_note` move such pages to Chromium.
 - No CDP dialog events: an init-script shim handles alert, confirm and prompt.
 - Multipart forms drop the file (routed to Chromium).
 - `el.required`, `img.alt`, `table.rows` and `row.cells` are missing.
