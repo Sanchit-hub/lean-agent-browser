@@ -117,7 +117,8 @@ uploads the JSON. A failure means look, not necessarily a bug: check whether the
 
 - Success and error words cover eleven languages, a handful of words each. Other languages, and wordings
   outside the list, end `unverified`: honest but unhelpful, so pass `expect=`. The `expect=` negation check
-  ("not <text>") is still English-only.
+  ("not <text>") knows the same eleven languages, both before the text ("nicht gespeichert", "no se ha
+  guardado", "未保存") and after it ("保存されていません", "저장되지 않", "सहेजा नहीं"); other negations still count.
 - Non-submit clicks are verified by any page change.
 - The suite's pages were written by the project. Cases from other people's real failures belong in
   `evals/bench/verification.py`.

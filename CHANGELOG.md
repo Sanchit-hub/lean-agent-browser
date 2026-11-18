@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **`expect=` negation now works in the same eleven languages as the success words.** `expect="gespeichert"`
+  is no longer satisfied by "nicht gespeichert", nor `guardado` by "no se ha guardado", `保存` by "未保存" or
+  "保存されていません", `저장` by "저장되지 않", `सहेजा` by "सहेजा नहीं" (likewise French, Italian, Portuguese,
+  Russian, Chinese). English behaviour is unchanged apart from a bare "no" before the text ("no changes saved"),
+  which now also counts as a negation. 12 new verification cases.
 - The `expect-url-already` verification case (v0.7.0 finding 3) never actually ran: its page was not found and
   that counted as "not verified". Fixed; it now runs and is correctly `unverified` on both engines. A case that
   can't find its page or target is now a setup error that fails the matrix instead of hiding.

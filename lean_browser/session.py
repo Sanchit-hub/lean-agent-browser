@@ -199,13 +199,20 @@ FORM_INVALID_JS = r"""(el, enter) => {
 }"""
 
 # Occurrences of expected text on the page, not counting negated ones ("not saved", "unsuccessful").
+# Also the other ten languages NEGATED_SUCCESS_RE knows, with the negation before the text ("nicht gespeichert",
+# "no se ha guardado", "n'a pas été enregistré", "не сохранено", "未保存") or after it ("保存されていません",
+# "저장되지 않", "सहेजा नहीं"). JS \b and \w are ASCII-only, so Latin and Cyrillic letters are spelled out.
 EXPECT_COUNT_JS = r"""t => { const n = s => (s || '').replace(/\s+/g, ' ').toLowerCase();
   const body = n(document.body && (document.body.innerText || document.body.textContent)), w = n(t).trim();
   if (!w) return 0;
+  const preIntl = /(?:^|[^a-zÀ-ɏЀ-ӿ])(?:nicht|kein(?:e[nmrs]?)?|nie|niemals|pas|non|jamais|aucune?|nessun[oa]?|no|nunca|ning[uú]n[oa]?|não|nao|не|ни|нет)\s+(?:[a-zÀ-ɏЀ-ӿ'’]+\s+){0,3}$|(?:未|[没沒]有?|不)\s?$|(?:^|[^ऀ-ॿ])(?:नहीं|न)\s+$/;
+  const postIntl = /^(?:(?:されて|して|でき|され|し)?い?ません|に失敗|(?:でき|され|し)なかった)|^\s?(?:(?:되지|하지)\s?(?:않|못)|(?:하지\s)?못|실패)|^\s+(?:[ऀ-ॿ]+\s+){0,2}?(?:नहीं|न)(?![ऀ-ॿ])/;
   let c = 0, i = 0;
   while ((i = body.indexOf(w, i)) !== -1) {
-    const pre = body.slice(Math.max(0, i - 30), i);
-    if (!/(\bnot|\bnever|n[’']t|\bno longer|\bun|\bfailed to|\bcould not be)\s*(\w+\s+){0,2}$/.test(pre)) c++;
+    const pre = body.slice(Math.max(0, i - 30), i), pre40 = body.slice(Math.max(0, i - 40), i);
+    const post = body.slice(i + w.length, i + w.length + 30);
+    if (!/(\bnot|\bnever|n[’']t|\bno longer|\bun|\bfailed to|\bcould not be)\s*(\w+\s+){0,2}$/.test(pre)
+        && !preIntl.test(pre40) && !postIntl.test(post)) c++;
     i += w.length;
   }
   return c; }"""

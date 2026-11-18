@@ -109,3 +109,44 @@ def test_hindi_words_match_despite_vowel_signs():
     # Devanagari vowel signs are not \w in Python, so a plain \b after "त्रुटि" never matched before.
     assert ERROR_RE.search("त्रुटि हुई") and ERROR_RE.search("त्रुटि")
     assert not SUCCESS_RE.search("असफल")  # "unsuccessful" contains सफल but is not success
+
+
+# ---------- expect= counting (EXPECT_COUNT_JS in a real page, both engines) ----------
+from lean_browser.session import EXPECT_COUNT_JS  # noqa: E402
+
+EXPECT_COUNTS = [  # (page text, expected text, occurrences that count)
+    # English, unchanged
+    ("Draft saved", "saved", 1), ("Draft not saved", "saved", 0), ("It wasn't saved", "saved", 0),
+    ("Never saved", "saved", 0), ("Could not be saved", "saved", 0), ("Unsaved changes", "saved", 0),
+    ("Saved. Saved again.", "saved", 2), ("Payment successful", "successful", 1),
+    # negation before the word
+    ("Entwurf nicht gespeichert", "gespeichert", 0), ("Konnte nicht gespeichert werden", "gespeichert", 0),
+    ("Entwurf gespeichert", "gespeichert", 1), ("Kein Eintrag gespeichert", "gespeichert", 0),
+    ("No guardado", "guardado", 0), ("El borrador no se ha guardado", "guardado", 0), ("Borrador guardado", "guardado", 1),
+    ("Non enregistré", "enregistré", 0), ("Le brouillon n'a pas été enregistré", "enregistré", 0),
+    ("Brouillon enregistré", "enregistré", 1),
+    ("Non salvato", "salvato", 0), ("Il documento non è stato salvato", "salvato", 0), ("Documento salvato", "salvato", 1),
+    ("Não foi salvo", "salvo", 0), ("Rascunho salvo", "salvo", 1),
+    ("Не сохранено", "сохранено", 0), ("Изменение не было сохранено", "сохранено", 0), ("Черновик сохранено", "сохранено", 1),
+    ("未保存的更改", "保存", 0), ("没有保存", "保存", 0), ("已保存", "保存", 1),
+    # negation after the word
+    ("下書きは保存されていません", "保存", 0), ("保存できませんでした", "保存", 0), ("保存しました", "保存", 1),
+    ("저장되지 않았습니다", "저장", 0), ("저장 실패", "저장", 0), ("저장되었습니다", "저장", 1),
+    ("ड्राफ्ट सहेजा नहीं गया", "सहेजा", 0), ("ड्राफ्ट सहेजा गया", "सहेजा", 1),
+]
+
+
+@pytest.mark.parametrize("engine", ENGINES)
+async def test_expect_count_negations(base, engine):  # noqa: F811
+    bm, sess = await _session(base, engine)
+    try:
+        await sess.open(base + "/v/x-new.html")
+        page = sess.cur.page
+        got = []
+        for text, want, n in EXPECT_COUNTS:
+            await page.evaluate("t => { document.body.textContent = t; }", text)
+            got.append((text, want, await page.evaluate(EXPECT_COUNT_JS, want), n))
+    finally:
+        await bm.close()
+    bad = [g for g in got if g[2] != g[3]]
+    assert not bad, f"{engine}: (text, expect, counted, wanted) {bad}"
