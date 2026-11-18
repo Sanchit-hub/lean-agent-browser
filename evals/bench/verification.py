@@ -118,6 +118,38 @@ expect_case("expect-new-tab", "/v/x-tab.html", "click", 'button "Place order"', 
             shell("Checkout", "<main><h1>Checkout</h1><button id='p'>Place order</button></main>",
                   "document.getElementById('p').onclick = () => window.open('/v/pay-failed.html', '_blank');"))
 
+
+def _expect_page(title, button, text):
+    return shell(title, f"<main><h1>{title}</h1><button id='s'>{button}</button><p id='o'></p></main>",
+                 f"document.getElementById('s').onclick = () => {{ document.getElementById('o').textContent = {text!r}; }};")
+
+
+# expect= negation in other languages: before the word (nicht, no, не, 未) and after it (されていません, 되지 않, नहीं)
+expect_case("expect-negated-german", "/v/x-neg-de.html", "click", 'button "Speichern"', None, "gespeichert", False,
+            "the page says 'Entwurf nicht gespeichert'", _expect_page("Entwurf", "Speichern", "Entwurf nicht gespeichert: Serverfehler"))
+expect_case("expect-negated-spanish", "/v/x-neg-es.html", "click", 'button "Guardar"', None, "guardado", False,
+            "the page says 'El borrador no se ha guardado'", _expect_page("Borrador", "Guardar", "El borrador no se ha guardado"))
+expect_case("expect-negated-japanese", "/v/x-neg-ja.html", "click", 'button "保存"', None, "保存", False,
+            "the page says '下書きは保存されていません' (not saved)", _expect_page("下書き", "保存", "下書きは保存されていません"))
+expect_case("expect-negated-japanese-pre", "/v/x-neg-ja2.html", "click", 'button "保存"', None, "保存", False,
+            "the page says '未保存の変更があります' (unsaved changes)", _expect_page("下書き", "保存", "未保存の変更があります"))
+expect_case("expect-negated-french", "/v/x-neg-fr.html", "click", 'button "Enregistrer"', None, "enregistré", False,
+            "the page says 'Le brouillon n'a pas été enregistré'", _expect_page("Brouillon", "Enregistrer", "Le brouillon n'a pas été enregistré"))
+expect_case("expect-negated-korean", "/v/x-neg-ko.html", "click", 'button "저장"', None, "저장", False,
+            "the page says '초안이 저장되지 않았습니다' (not saved)", _expect_page("초안", "저장", "초안이 저장되지 않았습니다"))
+expect_case("expect-negated-hindi", "/v/x-neg-hi.html", "click", 'button "सेव करें"', None, "सहेजा", False,
+            "the page says 'ड्राफ्ट सहेजा नहीं गया' (not saved)", _expect_page("ड्राफ्ट", "सेव करें", "ड्राफ्ट सहेजा नहीं गया"))
+expect_case("expect-negated-russian", "/v/x-neg-ru.html", "click", 'button "Сохранить"', None, "сохранено", False,
+            "the page says 'Изменение не было сохранено'", _expect_page("Черновик", "Сохранить", "Изменение не было сохранено"))
+expect_case("expect-negated-italian", "/v/x-neg-it.html", "click", 'button "Salva"', None, "salvato", False,
+            "the page says 'Il documento non è stato salvato'", _expect_page("Bozza", "Salva", "Il documento non è stato salvato"))
+expect_case("expect-negated-portuguese", "/v/x-neg-pt.html", "click", 'button "Salvar"', None, "salvo", False,
+            "the page says 'O rascunho não foi salvo'", _expect_page("Rascunho", "Salvar", "O rascunho não foi salvo"))
+expect_case("expect-new-text-german", "/v/x-new-de.html", "click", 'button "Speichern"', None, "gespeichert", True,
+            "the page says 'Entwurf gespeichert' after the click", _expect_page("Entwurf", "Speichern", "Entwurf gespeichert um 10:42"))
+expect_case("expect-new-text-japanese", "/v/x-new-ja.html", "click", 'button "保存"', None, "保存しました", True,
+            "the page says '下書きを保存しました' after the click", _expect_page("下書き", "保存", "下書きを保存しました"))
+
 # non-English error after a navigation
 _FORM_DE = "<main><h1>Konto</h1><form method='post' action='/v/api/de'><label>E-Mail <input name='e' value='a@b.de'></label><button type='submit'>Speichern</button></form></main>"
 POST["/v/api/de"] = lambda f, st: (200, shell("Fehler", "<main><h1>Fehler</h1><p>Die Änderung konnte nicht gespeichert werden.</p></main>"), None)
