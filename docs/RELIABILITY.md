@@ -94,7 +94,7 @@ only covered for direct connections; a `socks://` proxy can't be chained and tur
 
 | Area | Code | Tests |
 |---|---|---|
-| Verification honesty: 21 action cases + 6 `expect=` cases × 2 engines, false-verified must be 0 | `session.py` `_signals`, `_status`, `_after` | `tests/test_verification.py`, `scripts/verification_matrix.py` (repeated runs; weekly `reliability.yml`) |
+| Verification honesty: 46 action cases + 11 `expect=` cases × 2 engines, false-verified must be 0 (the red-team cases in `KNOWN_FALSE_VERIFIED` are strict xfails until fixed) | `session.py` `_signals`, `_status`, `_after` | `tests/test_verification.py`, `scripts/verification_matrix.py` (repeated runs; weekly `reliability.yml`) |
 | Outcomes on real flows: rejected login, server rejection, slow submit, `expect=` | `session.py` | `tests/test_reliability.py` |
 | Duplicate guard, action keys (across sessions, different keys, no key, concurrent claims, errors after claim), retry-safety classes, dry run | `session.py` `act`, `fill_form`, `retry_safety`; `action_keys.py` | `tests/test_reliability.py` |
 | Recovery after re-render, reordered lists | `session.py` `_resolve_or_recover`, `_perform_guarded` | `tests/test_reliability.py`, `tests/test_session.py` |

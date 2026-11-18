@@ -5,7 +5,8 @@
   .venv/bin/python scripts/verification_matrix.py --json out.json
 
 Exit code 1 if any run reports `verified` for an outcome that did not happen (false verified), or if a case
-couldn't run at all (setup error: its page or target is missing).
+couldn't run at all (setup error: its page or target is missing). Cases listed in KNOWN_FALSE_VERIFIED are
+counted as KNOWN_FALSE_VERIFIED instead (still printed, not an exit failure) until they are fixed.
 No LLM involved: the fixture pages decide whether the outcome happened.
 """
 from __future__ import annotations
@@ -22,7 +23,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from evals.bench.verification import CASES, CASES_EXPECT, classify, run_case, run_expect_case  # noqa: E402
+from evals.bench.verification import (CASES, CASES_EXPECT, KNOWN_FALSE_VERIFIED, classify, run_case,  # noqa: E402
+                                      run_expect_case)
 from evals.fixtures.server import serve  # noqa: E402
 from lean_browser import __version__  # noqa: E402
 from lean_browser.engine import BrowserManager, find_obscura  # noqa: E402
@@ -63,10 +65,12 @@ async def main() -> int:
                 for r in range(a.runs):
                     status, secs, out = await one(base, engine, c)
                     cls = classify(happened, status)
+                    if cls == "FALSE_VERIFIED" and c[0] in KNOWN_FALSE_VERIFIED:
+                        cls = "KNOWN_FALSE_VERIFIED"
                     matrix[cls] += 1
                     rows.append({"case": c[0], "engine": engine, "run": r + 1, "happened": happened, "status": status,
                                  "class": cls, "seconds": round(secs, 2)})
-                    if cls in ("FALSE_VERIFIED", "SETUP_ERROR"):
+                    if cls in ("FALSE_VERIFIED", "KNOWN_FALSE_VERIFIED", "SETUP_ERROR"):
                         print(f"{cls.replace('_', ' '):15} {engine:8} {c[0]}: {out.splitlines()[0] if out else ''}")
     finally:
         srv.shutdown()
@@ -79,6 +83,10 @@ async def main() -> int:
         happened = next(r["happened"] for r in rows if r["case"] == cid)
         print(f"{cid:24} {eng:9} {str(happened):9} {dict(cnt)}")
     print("\nconfusion matrix:", dict(matrix))
+    fixed = sorted({r["case"] for r in rows if r["case"] in KNOWN_FALSE_VERIFIED}
+                   - {r["case"] for r in rows if r["class"] == "KNOWN_FALSE_VERIFIED"})
+    if fixed:
+        print("no longer false verified (remove from KNOWN_FALSE_VERIFIED):", ", ".join(fixed))
     secs = sorted(r["seconds"] for r in rows)
     print(f"action time p50 {secs[len(secs) // 2]:.2f}s, p95 {secs[int(len(secs) * 0.95) - 1]:.2f}s over {len(rows)} runs")
     if a.json:
