@@ -10,7 +10,7 @@ Status is one of: **verified** (a test or recorded run proves it), **partial** (
 | Claim | Implementation | Evidence | Status | Risk |
 |---|---|---|---|---|
 | Compact snapshots with stable ids, collapsed groups, find/expand | `snapshot.js`, `snapshot.py` | `tests/test_snapshot.py` (both engines) | verified | low |
-| `verified` means the page shows evidence the outcome happened | `session.py` `_signals`, `_status`, `_after` | `tests/test_verification.py`; `scripts/verification_matrix.py` 400 runs, 0 false verified | verified on the suite; English-only success words | medium |
+| `verified` means the page shows evidence the outcome happened | `session.py` `_signals`, `_status`, `_after` | `tests/test_verification.py`; `scripts/verification_matrix.py` 400 runs, 0 false verified | verified on the suite; success/error words in English plus ten common languages | medium |
 | `expect=` postconditions need new, non-negated evidence | `session.py` `_expect_pre`, `_check_expect`, `EXPECT_COUNT_JS` | `test_expect_needs_fresh_unnegated_evidence` (5 cases × 2 engines) | verified | low |
 | Form validation is checked before a submit (Obscura doesn't validate) | `session.py` `FORM_INVALID_JS`, `_form_invalid` | `html5-required` case | verified | low |
 | Submits, payments and deletes are never retried automatically | `session.py` `_perform_guarded`, `retry_safety` | `test_slow_submit_times_out_honestly_and_is_not_repeated`, `test_retry_safety_classes` | verified | low |
@@ -29,7 +29,7 @@ Status is one of: **verified** (a test or recorded run proves it), **partial** (
 | Supported platforms: macOS arm64, Ubuntu 24.04 x86_64 and arm64 | CI matrix | `ci.yml` runs | verified | low |
 | Fewer tokens than Playwright MCP | `evals/` | 100 fixture tasks × 3 runs (`docs/benchmark.md`) | partial: our own fixture tasks only, not real sites | medium |
 | Chromium runs inside its own OS sandbox where the host allows it | `engine.py` `_chromium_context` (sandboxed launch, fallback with a note), `doctor.py` `check_chromium_sandbox` | `test_chromium_tries_its_os_sandbox_and_reports_it`, `test_chromium_falls_back_without_os_sandbox` | verified on macOS; partial on Linux: off where user namespaces are restricted (doctor WARN) | medium |
-| Pages in other languages | `ERROR_RE` has common error words in several languages | `nav-error-german` case | partial: success words English-only, so these usually end `unverified` | medium |
+| Pages in other languages | `ERROR_RE` has common error words in several languages | `nav-error-german`, `success-*`, `negated-*` cases | partial: success and error words in ten common languages (German, French, Italian, Spanish, Portuguese, Russian, Chinese, Japanese, Korean, Hindi); others end `unverified`; `expect=` negation is English-only | medium |
 | Exactly-once execution on arbitrary websites | — | — | not supported, not claimed | — |
 
 ## Release state

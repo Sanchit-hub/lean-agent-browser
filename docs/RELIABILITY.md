@@ -47,8 +47,11 @@ Otherwise:
 If it fails, the submit is not sent and the status is `blocked` with the fields and messages. Chromium would
 silently refuse that submit; Obscura doesn't validate forms at all and would have sent it.
 
-**Error words** are mostly English, plus common ones in German, French, Italian, Spanish, Portuguese,
-Russian, Chinese, Japanese, Korean and Hindi. Success words are English only.
+**Error and success words** are English plus common ones in German, French, Italian, Spanish, Portuguese,
+Russian, Chinese, Japanese, Korean and Hindi ("gespeichert", "enregistré", "guardado", "сохранено", "保存成功",
+"保存しました", "저장되었습니다", "सहेजा गया", ...). Negated forms ("nicht gespeichert", "non enregistré",
+"no guardado", "не сохранено", "未保存", "保存されていません", "저장되지 않", "सहेजा नहीं") count as errors, never
+success, and a text that has both a success and an error word is not success.
 
 **Other clicks**: `verified` if the page changed. This is weaker evidence: a page that changes on its own can
 make an unrelated click look verified. Pass `expect=` when it matters.
@@ -112,8 +115,9 @@ uploads the JSON. A failure means look, not necessarily a bug: check whether the
 
 ## Known gaps
 
-- English-only success and error words. A page in another language usually ends `unverified`, which is
-  honest but unhelpful.
+- Success and error words cover eleven languages, a handful of words each. Other languages, and wordings
+  outside the list, end `unverified`: honest but unhelpful, so pass `expect=`. The `expect=` negation check
+  ("not <text>") is still English-only.
 - Non-submit clicks are verified by any page change.
 - The suite's pages were written by the project. Cases from other people's real failures belong in
   `evals/bench/verification.py`.

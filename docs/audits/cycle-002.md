@@ -16,7 +16,7 @@ with a fixture, write the failing test first, fix it with the smallest change, t
 | 2 | P0 | `expect="saved"` was satisfied by "Draft not saved" | `expect-negated` | `EXPECT_COUNT_JS` skips occurrences preceded by not / never / n't / un- / failed to | same | fixed |
 | 3 | P0 | `expect="url:..."` was satisfied by a URL that already matched before the action | `expect-url-already` | URL must have changed or newly contain the part | same | fixed |
 | 4 | P0 | An action that opened a new tab reported `verified` with `expect=` set, without checking it | code read: `_new_tab_result` | The expectation is checked in the new tab | `expect-new-tab` case | fixed |
-| 5 | P1 | A submit that navigated to a German error page ("Fehler") was `verified` (page changed) | `nav-error-german` | Common error words in German, French, Italian, Spanish, Portuguese, Russian, Chinese, Japanese, Korean and Hindi count as errors | verification suite | fixed (partial: success words stay English) |
+| 5 | P1 | A submit that navigated to a German error page ("Fehler") was `verified` (page changed) | `nav-error-german` | Common error words in German, French, Italian, Spanish, Portuguese, Russian, Chinese, Japanese, Korean and Hindi count as errors | verification suite | fixed (success words added in the same languages afterwards) |
 | 6 | P1 | Two concurrent Python API calls (`asyncio.gather`) mixed pages: both got the second page and Obscura's navigation failed | `test_concurrent_python_calls_do_not_mix_pages` reproduced it | `LeanBrowser.call` takes a lock (the MCP server already had one) | same | fixed |
 | 7 | P2 | After an engine crash, `act`/`snapshot` returned a raw `TargetClosedError` | killed Obscura mid-session | Clear error: the engine crashed, call `open(url)`, and check whether the last submit took effect | `test_engine_crash_mid_session_is_explained_and_recoverable` | fixed |
 
@@ -66,6 +66,6 @@ Checked and found sound, now with tests:
 | — | PyPI publication | End-user install route | **Externally blocked**: maintainer sets up trusted publishing |
 | ✓ | Guard proxy chains to the user's `HTTP(S)_PROXY` | Redirect protection was lost behind corporate proxies | **Done** (unreleased): `tests/test_netguard.py` |
 | ✓ | Dedicated DNS-rebinding test | The guard covered it without a test | **Done** (unreleased): `test_dns_rebinding_is_refused` |
-| P2 | Success words in more languages | Non-English success ends `unverified` | Add words with fixtures per language |
+| ✓ | Success words in more languages | Non-English success ended `unverified` | **Done** (unreleased): same ten languages, negated forms, 7 new verification cases |
 | P3 | Caller-supplied action key for the duplicate guard | Guard across sessions and restarts | Design first; needs a schema change |
 | ✓ | Real-site canary suite (read-only) | Fixture results don't prove real sites | **Done** (unreleased): `scripts/canary.py`, weekly `canary.yml` |

@@ -124,6 +124,29 @@ POST["/v/api/de"] = lambda f, st: (200, shell("Fehler", "<main><h1>Fehler</h1><p
 case("nav-error-german", "/v/de.html", "click", 'button "Speichern"', None, False,
      "German error page after the submit ('Fehler')", shell("Konto", _FORM_DE))
 
+def _status_form(title, h1, label, value, button, message, lang):
+    """A form whose submit stays on the page and only writes `message` into a live region: the message is the
+    only evidence (no navigation, the button stays, the field keeps its value)."""
+    return shell(title, f"<main lang='{lang}'><h1>{h1}</h1><form id='f'><label>{label} <input name='v' value='{value}'></label>"
+                 f"<button type='submit'>{button}</button></form><p id='out' role='status'></p></main>",
+                 "document.getElementById('f').onsubmit = e => { e.preventDefault();"
+                 f" document.getElementById('out').textContent = {message!r}; }};")
+
+
+# non-English failures that contain a success word
+case("negated-spanish", "/v/es-neg.html", "click", 'button "Guardar"', None, False,
+     "Spanish status 'No se ha guardado el cambio'",
+     _status_form("Perfil", "Perfil", "Apodo", "Ravi", "Guardar", "No se ha guardado el cambio. Inténtelo más tarde.", "es"))
+case("negated-german", "/v/de-neg.html", "click", 'button "Speichern"', None, False,
+     "German status 'Nicht gespeichert'",
+     _status_form("Profil", "Profil", "Spitzname", "Ravi", "Speichern", "Nicht gespeichert: Verbindung unterbrochen.", "de"))
+case("negated-japanese", "/v/ja-neg.html", "click", 'button "保存"', None, False,
+     "Japanese status '保存されていません' (not saved)",
+     _status_form("プロフィール", "プロフィール", "ニックネーム", "Ravi", "保存", "変更は保存されていません。", "ja"))
+case("success-and-error-chinese", "/v/zh-mixed.html", "click", 'button "提交"', None, False,
+     "Chinese status says saved but sending failed ('保存成功，但发送失败')",
+     _status_form("留言", "留言", "内容", "你好", "提交", "保存成功，但发送失败。", "zh"))
+
 # ---------- the outcome DID happen: `verified` is right, `unverified` is an honest miss ----------
 
 PAGES["/v/thanks.html"] = shell("Thanks", "<main><h1>Thank you, your order is placed</h1></main>")
@@ -171,6 +194,18 @@ case("tab-switch", "/v/tabs.html", "click", 'tab "Specs"', None, True, "a tab sh
            "<button role='tab' aria-selected='false' id='b'>Specs</button></div><div role='tabpanel' id='p'>Great camera.</div></main>",
            "document.getElementById('b').onclick = () => { document.getElementById('b').setAttribute('aria-selected', 'true');"
            " document.getElementById('a').setAttribute('aria-selected', 'false'); document.getElementById('p').textContent = '6.1 inch, 128 GB'; };"))
+
+
+# non-English success messages: the only evidence is the message, so these need the success words
+case("success-german", "/v/de-ok.html", "click", 'button "Speichern"', None, True,
+     "German status 'Ihre Änderungen wurden gespeichert'",
+     _status_form("Profil", "Profil", "Spitzname", "Ravi", "Speichern", "Vielen Dank! Ihre Änderungen wurden gespeichert.", "de"))
+case("success-chinese", "/v/zh-ok.html", "click", 'button "提交"', None, True,
+     "Chinese status '保存成功' (saved)",
+     _status_form("留言", "留言", "内容", "你好", "提交", "保存成功", "zh"))
+case("success-japanese", "/v/ja-ok.html", "click", 'button "保存"', None, True,
+     "Japanese status '保存しました' (saved)",
+     _status_form("プロフィール", "プロフィール", "ニックネーム", "Ravi", "保存", "変更を保存しました。", "ja"))
 
 
 async def run_expect_case(sess, base: str, c) -> tuple[str, str]:

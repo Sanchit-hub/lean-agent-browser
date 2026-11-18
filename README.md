@@ -201,8 +201,8 @@ agent ──MCP / CLI / Python──▶  7 tools  ──▶  snapshot · act · 
   On Linux, Obscura runs only under bubblewrap; without it, Chromium serves every page.
 - The benchmark is 100 fixture tasks we wrote ourselves, on a local test site. It measures these tasks, not
   every website, and it is not proof against every browser agent. See [`docs/benchmark.md`](docs/benchmark.md).
-- Verification is heuristic: success and error words are English-only, and a site that shows neither
-  stays `unverified`. Pass `expect=` when it matters.
+- Verification is heuristic: success and error words cover English and ten common languages, and a site
+  that shows neither stays `unverified`. Pass `expect=` when it matters.
 - The duplicate guard is per session and per page. It can't see side effects from another session.
 - A dry run reflects the page at that moment; the page can change before you execute.
 - This release has not yet been tested by outside developers, and it is not on PyPI yet.
