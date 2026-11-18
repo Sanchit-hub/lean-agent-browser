@@ -88,7 +88,7 @@ only covered for direct connections; a `socks://` proxy can't be chained and tur
 | Outcomes on real flows: rejected login, server rejection, slow submit, `expect=` | `session.py` | `tests/test_reliability.py` |
 | Duplicate guard, retry-safety classes, dry run | `session.py` `act`, `fill_form`, `retry_safety` | `tests/test_reliability.py` |
 | Recovery after re-render, reordered lists | `session.py` `_resolve_or_recover`, `_perform_guarded` | `tests/test_reliability.py`, `tests/test_session.py` |
-| Private network: URL check, both engines, redirect hops, DNS rebinding, behind the user's proxy | `tools.py`, `engine.py` `_route`, `netguard.py` | `tests/test_engine.py`, `tests/test_netguard.py`, `tests/test_tools.py` |
+| Private network: URL check, both engines, redirect hops, DNS rebinding, WebSockets, behind the user's proxy | `tools.py`, `engine.py` `_route`, `netguard.py` | `tests/test_engine.py`, `tests/test_netguard.py`, `tests/test_tools.py` |
 | Uploads limited to allowed folders | `session.py` `_perform` (resolved path) | `tests/test_session.py` |
 | Trace redaction | `trace.py` | `tests/test_trace.py` |
 | MCP contract, invalid calls, stdout purity, isolation, concurrency | `mcp_server.py`, `tools.py` | `tests/test_contract.py` |
