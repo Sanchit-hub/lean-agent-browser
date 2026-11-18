@@ -334,6 +334,13 @@ case("rt-fill-reverted-late", "/v/rt-revert.html", "fill", 'textbox "Display nam
            "const n = document.getElementById('n'); let t; n.addEventListener('input', () => { clearTimeout(t);"
            " t = setTimeout(() => { n.value = 'Asha'; }, 1200); });"))
 
+# Honest control for rt-fill-reverted-late: the debounced autosave succeeds and the value stays.
+case("rt-fill-autosave-keeps", "/v/rt-autosave-ok.html", "fill", 'textbox "Display name"', "Asha R", True,
+     "a debounced autosave 1.2 s after the fill succeeds; the value stays",
+     shell("Profile", "<main><h1>Profile</h1><label>Display name <input id='n' value='Asha'></label><p id='m'></p></main>",
+           "const n = document.getElementById('n'); let t; n.addEventListener('input', () => { clearTimeout(t);"
+           " t = setTimeout(() => { document.getElementById('m').textContent = 'Saved'; }, 1200); });"))
+
 # A submit that lands on a soft 404 (HTTP 200, heading 'Page not found').
 PAGES["/v/rt-gone.html"] = shell("Not found", "<main><h1>Page not found</h1><p>The page you are looking for doesn't exist.</p></main>")
 case("rt-soft-404", "/v/rt-404.html", "click", 'button "Confirm booking"', None, False,
@@ -458,9 +465,4 @@ def classify(happened: bool, status: str) -> str:
 
 # Cases that currently get a false `verified`. tests/test_verification.py xfails them strictly, so a fix makes
 # the test fail until the id is removed here.
-# rt-fill-reverted-late: a field verified after the page settled, which the page itself reverts 1.2 s later
-# (a rejected autosave). A field action's `verified` means "held the value once the page settled"; a later change
-# by the page is outside the action's window (docs/RELIABILITY.md, Known gaps). Kept as a visible known gap.
-KNOWN_FALSE_VERIFIED: set[str] = {
-    "rt-fill-reverted-late",
-}
+KNOWN_FALSE_VERIFIED: set[str] = set()

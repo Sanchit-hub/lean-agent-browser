@@ -27,7 +27,7 @@ from playwright.async_api import ElementHandle, Page
 from lean_browser.action_keys import ActionKeys
 from lean_browser.diff import diff
 from lean_browser.engine import BrowserManager, Tab
-from lean_browser.settle import PageUnresponsive, settle
+from lean_browser.settle import ARM_TIMERS_JS, DISARM_TIMERS_JS, PENDING_TIMERS_JS, PageUnresponsive, settle
 from lean_browser.snapshot import Snapshot, Snapshotter, SnapshotTimeout
 
 EXTRACT_JS = (Path(__file__).parent / "extract.js").read_text()
@@ -300,6 +300,7 @@ PENDING_RE = re.compile(r"\b(processing|please wait|loading|submitting|sending|s
                         r"authori[sz]ing|redirecting|hold on|one moment)\b|…\s*$|\.\.\.\s*$", re.I)
 TIMEISH_RE = re.compile(r"\b\d+\s*(s|secs?|seconds?|m|mins?|minutes?|h|hrs?|hours?)\b|\bago\b|\b\d{1,2}:\d{2}(:\d{2})?\b", re.I)
 SAFE_ACTIONS = {"hover", "focus", "scroll", "wait_for"}
+FIELD_ACTIONS = ("fill", "clear", "select", "check", "uncheck", "upload")
 SUBMIT_KEYS = {"enter"}
 
 
@@ -828,6 +829,8 @@ class Session:
         if key:
             self._claim_key(key, url_before, v == "repeat", base_outcome, 'call act with value="repeat"')
         try:
+            if action in FIELD_ACTIONS:
+                await self._eval_quiet(ts, ARM_TIMERS_JS)
             uncertain, id = await self._perform_guarded(ts, action, id, value if action != "click" else None, entry, safety, rec)
             exp = {"kind": "action", "action": action, "id": id, "value": value, "entry": entry, "risky": risky,
                    "safety": safety, "expect": expect, "uncertain": uncertain, "base": base_outcome}
@@ -866,6 +869,12 @@ class Session:
         except Exception:
             return set()
         return {" ".join(x.split()) for x in lines if 0 < len(x.strip()) < 80}
+
+    async def _eval_quiet(self, ts: TabState, js: str):
+        try:
+            return await asyncio.wait_for(ts.page.evaluate(js), 2)
+        except Exception:  # noqa: BLE001 - timer tracking is best effort
+            return None
 
     async def _plain_lines(self, ts: TabState) -> set[str]:
         try:
@@ -1092,6 +1101,17 @@ class Session:
         if len(self.tabs) > tabs_before:
             return await self._new_tab_result(ts, prefix, expect)
         await self._drain_dialog_shim(ts)
+        field_check = expect and ((expect["kind"] == "action" and expect["action"] in FIELD_ACTIONS)
+                                  or (expect["kind"] == "form" and not expect.get("submitted")))
+        if field_check:
+            # A page can undo a field on its own a moment later (a debounced autosave rejected, a delayed
+            # validator). If the action scheduled such a short timer and it hasn't fired yet, wait for it, so the
+            # field is read after it. Pages that schedule nothing don't wait.
+            due = await self._eval_quiet(ts, PENDING_TIMERS_JS) or 0
+            if 0 < due <= 3000:
+                await asyncio.sleep(due / 1000 + 0.05)
+                settled = await self._settle(ts) and settled
+            await self._eval_quiet(ts, DISARM_TIMERS_JS)
         # Field states are read before the after-snapshot so they describe the same moment.
         states = {}
         if expect and expect["kind"] == "action" and expect["action"] in ("fill", "clear", "select", "check", "uncheck", "upload"):
@@ -1456,6 +1476,7 @@ class Session:
     async def _fill_form_dispatch(self, ts, fields, submit, expect, key, dup, idx, before, tabs_before, url_before,
                                   base, form_key):
         await self._sync_dialog_policy(ts)
+        await self._eval_quiet(ts, ARM_TIMERS_JS)
         errors = []
         for raw_id, value in fields.items():
             fid = int(raw_id)

@@ -8,8 +8,10 @@
   once is `unverified`; a heading already on the page before the action, or "Loading complete", isn't a success
   message; a live "Saved" that is the only evidence is re-read 1.2 s later; an error dialog or a new "Try again"
   button means `blocked`; "page not found" / "doesn't exist" are error words; `expect=` sees negations up to five
-  words back ("weren't able to get your draft saved"). One case remains a documented gap: a field the page
-  reverts on its own 1.2 s after the fill.
+  words back ("weren't able to get your draft saved").
+- Field actions wait for short timers the page scheduled in response (a debounced autosave or delayed validator,
+  up to 3 s) before reading the field back, so a field the page reverts a moment later is `unverified` instead of
+  `verified`. Pages that schedule nothing aren't slowed down (a plain fill still takes ~0.1 s).
 - WebSockets on Obscura: its `WebSocket` fakes a successful open and never connects, so a live page looked
   connected. Lean now makes it fail honestly there, routes pages that open one at load to Chromium, and after an
   action that opens one says so and opens that host in Chromium from then on.

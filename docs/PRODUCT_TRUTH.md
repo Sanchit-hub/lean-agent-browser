@@ -10,7 +10,7 @@ Status is one of: **verified** (a test or recorded run proves it), **partial** (
 | Claim | Implementation | Evidence | Status | Risk |
 |---|---|---|---|---|
 | Compact snapshots with stable ids, collapsed groups, find/expand | `snapshot.js`, `snapshot.py` | `tests/test_snapshot.py` (both engines) | verified | low |
-| `verified` means the page shows evidence the outcome happened | `session.py` `_signals`, `_status`, `_after` | `tests/test_verification.py`; `scripts/verification_matrix.py` 1,380 runs on `ffa68a0`: 0 new false verified, 0 false unverified; 1 known gap (`rt-fill-reverted-late`) | verified on the suite (incl. 23 red-team cases); success/error words in English plus ten common languages | medium |
+| `verified` means the page shows evidence the outcome happened | `session.py` `_signals`, `_status`, `_after` | `tests/test_verification.py`; `scripts/verification_matrix.py` 1,380 runs on `ffa68a0`: 0 new false verified, 0 false unverified; the one known gap (`rt-fill-reverted-late`) since fixed | verified on the suite (incl. 23 red-team cases); success/error words in English plus ten common languages | medium |
 | `expect=` postconditions need new, non-negated evidence | `session.py` `_expect_pre`, `_check_expect`, `EXPECT_COUNT_JS` | `test_expect_needs_fresh_unnegated_evidence` (5 cases × 2 engines) | verified | low |
 | Form validation is checked before a submit (Obscura doesn't validate) | `session.py` `FORM_INVALID_JS`, `_form_invalid` | `html5-required` case | verified | low |
 | Submits, payments and deletes are never retried automatically | `session.py` `_perform_guarded`, `retry_safety` | `test_slow_submit_times_out_honestly_and_is_not_repeated`, `test_retry_safety_classes` | verified | low |

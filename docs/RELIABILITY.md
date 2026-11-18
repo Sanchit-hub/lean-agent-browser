@@ -20,7 +20,9 @@ an outcome that did happen is a smaller defect, tracked in the same suite.
 
 **Field actions** (`fill`, `clear`, `select`, `check`, `uncheck`, `upload`, sliders): the field's state is read
 back after the page settles. `verified` only if it holds the requested value. A field that strips or reverts
-the input is `unverified`.
+the input is `unverified`. If the action made the page schedule a short timer (a debounced autosave or delayed
+validator, up to 3 s), Lean waits for it to fire before reading the field, so a field the page reverts a moment
+later is caught; a page that schedules nothing isn't slowed down.
 
 **Submit-like actions** (submit buttons, payment/delete/send-like names, Enter in a form field, `fill_form`
 with `submit`): `verified` needs one of
@@ -135,9 +137,8 @@ uploads the JSON. A failure means look, not necessarily a bug: check whether the
 
 ## Known gaps
 
-- A field action is `verified` when the field holds the value once the page has settled. A page that reverts
-  it on its own later (a rejected autosave 1.2 s afterwards) is not seen: `rt-fill-reverted-late` stays in
-  `KNOWN_FALSE_VERIFIED` as a visible gap.
+- A field is re-read after short timers (≤ 3 s) the page scheduled during the action. A page that changes the
+  field later than that, or from a server push rather than a timer, is not seen.
 
 - Success and error words cover eleven languages, a handful of words each. Other languages, and wordings
   outside the list, end `unverified`: honest but unhelpful, so pass `expect=`. The `expect=` negation check

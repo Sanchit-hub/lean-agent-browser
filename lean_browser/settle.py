@@ -28,6 +28,21 @@ SETTLE_INIT_JS = r"""
     this.addEventListener('loadend', () => { s.pending.delete(k); bump(); }, { once: true });
     return XS.apply(this, a);
   };
+  // Short timers (debounced autosave, delayed validation) a page schedules in response to an action. Session arms
+  // this before a field action and, if one is still pending after settle, waits for it before re-reading the field.
+  s.timers = new Map(); s.armAt = Infinity;
+  const ost = window.setTimeout, oct = window.clearTimeout;
+  if (ost) {
+    window.setTimeout = function (fn, ms, ...rest) {
+      const d = Number(ms) || 0, now = performance.now();
+      let id;
+      const wrapped = typeof fn === 'function' ? function (...x) { s.timers.delete(id); return fn.apply(this, x); } : fn;
+      id = ost.call(this, wrapped, ms, ...rest);
+      if (typeof fn === 'function' && d >= 50 && d <= 3000 && now >= s.armAt) s.timers.set(id, now + d);
+      return id;
+    };
+    window.clearTimeout = function (id) { s.timers.delete(id); return oct.call(this, id); };
+  }
   const start = () => {
     try {
       new MutationObserver(recs => {
@@ -46,6 +61,15 @@ PROBE_JS = """() => {
   let n = 0; for (const t of s.pending.values()) if (now - t < 3000) n++;
   return { quiet: now - s.lastMut, net: n, ready: document.readyState };
 }"""
+
+
+ARM_TIMERS_JS = "() => { const s = window.__labSettle; if (s && s.timers) { s.timers.clear(); s.armAt = performance.now(); } }"
+# ms until the last short timer scheduled since arming fires (0 if none), then disarm.
+PENDING_TIMERS_JS = """() => { const s = window.__labSettle; if (!s || !s.timers) return 0;
+  const now = performance.now(); let due = 0;
+  for (const t of s.timers.values()) if (t > now) due = Math.max(due, t - now);
+  return due; }"""
+DISARM_TIMERS_JS = "() => { const s = window.__labSettle; if (s && s.timers) { s.armAt = Infinity; s.timers.clear(); } }"
 
 
 class PageUnresponsive(Exception):

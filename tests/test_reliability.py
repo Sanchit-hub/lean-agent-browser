@@ -302,6 +302,21 @@ def test_action_key_stale_claim_expires(tmp_path):
     assert ks.claim("k", "u") is None
 
 
+async def test_fill_waits_only_for_timers_the_page_scheduled(s):
+    """A fill re-reads the field after a short timer the page scheduled for it (autosave, delayed validation),
+    so a page that reverts the field is caught; a page that schedules nothing is not slowed down."""
+    import time
+    out = await s.open(s.base + "/login.html")
+    t = time.monotonic()
+    res = await s.act("fill", idof(out, 'textbox "Username"'), "demo")
+    assert res.startswith("status: verified") and time.monotonic() - t < 1.0, (res, time.monotonic() - t)
+    await s.cur.page.evaluate("""() => { const u = document.querySelector('input[name=username]');
+        let t; u.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => { u.value = 'demo'; }, 800); }); }""")
+    out = await s.snapshot()
+    res = await s.act("fill", idof(await s.snapshot(mode="full"), 'textbox "Username"'), "someone-else")
+    assert res.startswith("status: unverified") and "expected \"someone-else\"" in res, res
+
+
 def test_retry_safety_classes():
     sub = {"role": "button", "name": "Create account", "fp": {"form": "f", "sub": 1}}
     assert retry_safety("scroll", None) == "safe"
