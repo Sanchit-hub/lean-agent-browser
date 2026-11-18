@@ -139,7 +139,20 @@ A click being sent is not the same as the task succeeding. Every `act` and `fill
   suite are in [`docs/RELIABILITY.md`](docs/RELIABILITY.md).
 - **Duplicate guard.** Submits, payments, deletes and sends are classed `unsafe`. Lean never retries
   them, and repeating one on the same page after a `verified`, `ambiguous` or `timed_out` outcome is
-  blocked unless you pass `value="repeat"` (`submit="repeat"` for forms).
+  blocked unless you pass `value="repeat"` (`submit="repeat"` for forms). Pass `key=` (a stable name such
+  as `order-123`) to make the guard hold across pages, sessions and restarts: keys are kept for 24 hours
+  in `~/.lean-browser/action_keys.json` (mode 600; `LEANB_STATE_DIR` moves it). The key is claimed before
+  the action is sent, so two agents racing with the same key can't both send it.
+
+  **Which key to use.** Name the real-world thing, not the attempt:
+  - Reuse the same key whenever you might be repeating the same intent: retrying after `ambiguous` or
+    `timed_out`, resuming after a crash or restart, or another agent picking up the same job
+    (`order-<cart id>`, `pay-invoice-881`, `reply-ticket-42`).
+  - Use a new key for a genuinely new action, even if it looks the same: a second order, the next invoice
+    (`order-<new cart id>`). Don't put a timestamp or random value in a key you want to protect, since a retry
+    would get a new one and slip through.
+  - A blocked or unverified result doesn't hold the key, so fixing the form and submitting again needs no
+    `repeat`. `value="repeat"` / `submit="repeat"` is for when you've checked and really want it twice.
 - **Safe recovery.** A re-rendered target is re-found by role, name and fingerprint, only when the
   match is unambiguous. Fills, selects and checks check the field state first, and retry once only
   if they didn't stick.
@@ -173,8 +186,8 @@ There are seven tools. Claude counts their definitions at about 1.5k tokens, and
 |---|---|
 | `open(url, mode?, block?)` | Navigate, then return a snapshot. `mode` is `minimal` (interactive elements only), `actions` (default), `read` (markdown) or `full`. |
 | `snapshot(mode?, budget?, expand?, more?, find?, within?)` | Current page. `expand:h1` opens a collapsed group, `more:k1` continues cut-off output, `find` searches everything (including collapsed rows), and `within=<id>` shows only the form, table or section containing that element. |
-| `act(action, id?, value?, expect?, dry_run?)` | Actions: `click`, `fill`, `select` (an option label, also works on custom dropdowns), `check`, `uncheck`, `clear`, `press`, `hover`, `focus`, `upload`, `scroll`, `back`, `forward`, `reload`, `wait_for`, `tab` (`list` / `new:URL` / `switch:N` / `close:N`), `dialog` (`accept` / `dismiss` the next native dialog). Returns a status line (see [Outcomes](#outcomes-you-can-trust)) and a diff. A re-rendered element is re-found once by role and name, and the match must not contradict its fingerprint (link target, test id, field name, form, row text, landmark). If the match is ambiguous or contradicted, nothing is clicked. |
-| `fill_form(fields, submit?, expect?, dry_run?)` | `{id: value}` for a whole form in one call. `submit=true` clicks the form's submit button. |
+| `act(action, id?, value?, expect?, dry_run?, key?)` | Actions: `click`, `fill`, `select` (an option label, also works on custom dropdowns), `check`, `uncheck`, `clear`, `press`, `hover`, `focus`, `upload`, `scroll`, `back`, `forward`, `reload`, `wait_for`, `tab` (`list` / `new:URL` / `switch:N` / `close:N`), `dialog` (`accept` / `dismiss` the next native dialog). `key` names a submit-like action so a repeat is blocked across sessions (see the duplicate guard). Returns a status line (see [Outcomes](#outcomes-you-can-trust)) and a diff. A re-rendered element is re-found once by role and name, and the match must not contradict its fingerprint (link target, test id, field name, form, row text, landmark). If the match is ambiguous or contradicted, nothing is clicked. |
+| `fill_form(fields, submit?, expect?, dry_run?, key?)` | `{id: value}` for a whole form in one call. `submit=true` clicks the form's submit button. `key` works as in `act`. |
 | `extract(kind?, within?, fields?, new_only?)` | Deterministic JSON for a `table`, `list` or `form` (no LLM involved). Every result carries its source URL, plus row or item numbers and element ids. `fields` picks columns, and `new_only` returns only rows not returned before, which suits pagination and infinite scroll. |
 | `memory(action, key?, value?)` | Notes the agent keeps across pages (`set`, `get`, `list`, `delete`, `clear`), each with its source URL, so a value read on one page can be used on another. |
 | `screenshot(id?, annotate?)` | Viewport or element PNG. `annotate=true` draws each snapshot id on its element, so the image maps back to ids the agent can act on. Only for captchas, charts or layout. |
@@ -203,7 +216,8 @@ agent ──MCP / CLI / Python──▶  7 tools  ──▶  snapshot · act · 
   every website, and it is not proof against every browser agent. See [`docs/benchmark.md`](docs/benchmark.md).
 - Verification is heuristic: success and error words cover English and ten common languages, and a site
   that shows neither stays `unverified`. Pass `expect=` when it matters.
-- The duplicate guard is per session and per page. It can't see side effects from another session.
+- Without `key=`, the duplicate guard is per session and per page. It can't see side effects from another
+  session. With `key=` it holds for 24 hours on this machine, but only for calls that pass the same key.
 - A dry run reflects the page at that moment; the page can change before you execute.
 - This release has not yet been tested by outside developers, and it is not on PyPI yet.
 - Obscura 0.2.7 can't upload files, type into rich-text editors, open popups, read cross-origin iframes,

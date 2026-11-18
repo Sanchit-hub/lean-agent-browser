@@ -58,7 +58,7 @@
   "name": "snapshot"
  },
  {
-  "description": "Act on id -> status + changes. select: label. tab: list|new:URL|switch:N|close:N; dialog: accept[:TEXT]|dismiss. expect: text|url:X|gone:ID",
+  "description": "Act on id -> status + changes. select: label. tab: list|new:URL|switch:N|close:N; dialog: accept[:TEXT]|dismiss. expect: text|url:X|gone:ID; key: no repeat across sessions",
   "input_schema": {
    "properties": {
     "action": {
@@ -91,6 +91,9 @@
     "id": {
      "type": "integer"
     },
+    "key": {
+     "type": "string"
+    },
     "value": {
      "type": "string"
     }
@@ -117,6 +120,9 @@
       "type": "string"
      },
      "type": "object"
+    },
+    "key": {
+     "type": "string"
     },
     "submit": {
      "type": [

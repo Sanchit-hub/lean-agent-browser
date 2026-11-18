@@ -68,5 +68,5 @@ Checked and found sound, now with tests:
 | ✓ | Guard proxy chains to the user's `HTTP(S)_PROXY` | Redirect protection was lost behind corporate proxies | **Done** (unreleased): `tests/test_netguard.py` |
 | ✓ | Dedicated DNS-rebinding test | The guard covered it without a test | **Done** (unreleased): `test_dns_rebinding_is_refused` |
 | ✓ | Success words in more languages | Non-English success ended `unverified` | **Done** (unreleased): same ten languages, negated forms, 7 new verification cases |
-| P3 | Caller-supplied action key for the duplicate guard | Guard across sessions and restarts | Design first; needs a schema change |
+| ✓ | Caller-supplied action key for the duplicate guard | Guard across sessions and restarts | **Done** (unreleased): optional `key` on `act` / `fill_form`, claimed atomically before dispatch |
 | ✓ | Real-site canary suite (read-only) | Fixture results don't prove real sites | **Done** (unreleased): `scripts/canary.py`, weekly `canary.yml` |
