@@ -17,7 +17,7 @@ Status is one of: **verified** (a test or recorded run proves it), **partial** (
 | Repeating an unsafe action is blocked unless `value="repeat"` | `session.py` `act` (`_unsafe_log`), `fill_form` | `test_duplicate_*` | partial: per session and page; not across sessions or restarts | medium |
 | Re-rendered targets are re-found only on an unambiguous, non-contradicting match | `session.py` `_resolve_or_recover` | `test_conditional_action_retried_once_after_rerender`, `test_reordered_list_keeps_ids_with_their_rows`, `rerender` task | verified | low |
 | `dry_run` dispatches nothing | `session.py` `act`, `fill_form` | `test_dry_run_*`, clean-install MCP round trip | verified | low |
-| Private network blocked on both engines, including redirect hops | `tools.py` `_check_domain`, `engine.py` `_route`, `netguard.py` | `test_redirect_to_private_address_is_blocked[both]`, `test_private_network_*`, `test_netguard_refuses_private_targets` | partial: guard off when `HTTP(S)_PROXY` is set | medium |
+| Private network blocked on both engines, including redirect hops | `tools.py` `_check_domain`, `engine.py` `_route`, `netguard.py` | `test_redirect_to_private_address_is_blocked[both]`, `test_private_network_*`, `test_netguard_refuses_private_targets` `tests/test_netguard.py` (DNS rebinding, behind the user's proxy) | verified (socks proxies turn the guard off) | high |
 | Obscura is hash-pinned and always sandboxed | `engine.py` `verify_obscura`, `ObscuraProcess`, `sandbox_profile`, `bwrap_args` | `tests/test_engine.py` sandbox tests (macOS and Linux CI) | verified | low |
 | Engine fallback is visible, including after an engine crash | `engine.py` (`engine: chromium (reason)` in every header) | fallback tests; `test_engine_crash_mid_session_is_explained_and_recoverable` | verified | low |
 | Uploads only from allowed folders (symlinks and `..` resolved) | `session.py` `_check_upload` | `test_upload_on_chromium_and_guard`, `test_upload_path_guard_resolves_symlinks_and_dotdot` | verified | low |
@@ -115,8 +115,8 @@ only the older 18-task, 1-run result. Every task was written by the project auth
 - Not on PyPI. The release workflow is ready; trusted publishing has to be set up by the maintainer.
 - No first-time user test by people outside the project yet (protocol in `docs/RELEASING.md`).
 - One MCP client documented and tested: Claude Code.
-- Network containment (v0.6.0): connect-time guard on both engines with a redirect regression test. DNS
-  rebinding and WebSockets go through the same guard but have no dedicated test. The guard is off when
-  `HTTP(S)_PROXY` is set.
+- Network containment: connect-time guard on both engines, with redirect and DNS-rebinding tests. Behind
+  the user's `HTTP(S)_PROXY` it chains to that proxy (rebinding is then the proxy's own resolution); a
+  `socks://` proxy turns it off. WebSockets go through the same guard but have no dedicated test.
 - Chromium runs without its OS sandbox.
 - Upgrade from v0.5.0 is tested in CI (pipx); older versions were never tagged.

@@ -257,7 +257,8 @@ snapshot_timeout_s = 2.0            # slower snapshots move the page to Chromium
   are blocked on both engines unless you set `allow_private_network`, so falling back to Chromium
   never widens network access. Both engines connect through a local guard that checks the resolved
   address at connect time, so a public page that redirects to an internal address, or a hostname that
-  re-resolves to one, is refused too. (Not when you set `HTTP(S)_PROXY` yourself: see SECURITY.md.)
+  re-resolves to one, is refused too. Behind your own `HTTP(S)_PROXY` the guard chains to it (limits in
+  SECURITY.md).
 - **Untrusted page content.** Everything taken from a page comes back inside
   `<page untrusted="true">…</page>`, and the MCP server instructions tell the agent to treat it as
   data. Hidden text (`display:none`, off-screen, `aria-hidden`, tiny fonts) is dropped, which removes

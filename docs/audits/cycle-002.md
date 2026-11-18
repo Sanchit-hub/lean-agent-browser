@@ -33,7 +33,7 @@ Checked and found sound, now with tests:
 | Threat | Asset | Attacker | Path | Mitigation | Test | Residual risk |
 |---|---|---|---|---|---|---|
 | Prompt injection | The agent's actions | Page author | Visible or hidden page text | Content wrapped as `<page untrusted>`; hidden text dropped; MCP instructions say page text is data; risky actions classed `unsafe`, optional `confirm_risky` | `inject-delete`, `inject-exfil` tasks | Visible text still reaches the agent: reduces, doesn't prevent |
-| Network pivot (SSRF) | localhost, LAN, cloud metadata | Page author, redirector | Navigation, redirects, subresources, DNS rebinding | URL check, request routing, connect-time guard on both engines | `test_redirect_to_private_address_is_blocked`, `test_private_network_*` | Guard off when `HTTP(S)_PROXY` is set; no dedicated rebinding test |
+| Network pivot (SSRF) | localhost, LAN, cloud metadata | Page author, redirector | Navigation, redirects, subresources, DNS rebinding | URL check, request routing, connect-time guard on both engines | `test_redirect_to_private_address_is_blocked`, `test_private_network_*` | Behind the user's proxy, rebinding depends on that proxy's resolution; socks proxies turn the guard off |
 | Local file read | Files on disk | Page or agent | Upload with a crafted path | Absolute paths inside `allowed_upload_dirs`, symlinks and `..` resolved | `test_upload_path_guard_*` | Files inside the allowed folder can be uploaded by design |
 | Secrets in traces | Passwords, tokens, cards | Anyone who gets a trace | `--trace` files, exports | Redaction of sensitive fields and URL parameters; page text opt-in; `600` export files | `tests/test_trace.py` | A secret typed into an unrecognised plain field |
 | Browser profile | The user's own Chrome data | Page author | Shared profile | Throwaway profiles only; Obscura sandboxed away from home | engine tests | Chromium runs without its OS sandbox |
@@ -64,8 +64,8 @@ Checked and found sound, now with tests:
 |---|---|---|---|
 | — | Three first-time users complete onboarding unaided | Release gate | **Externally blocked**: needs people (`docs/RELEASING.md`) |
 | — | PyPI publication | End-user install route | **Externally blocked**: maintainer sets up trusted publishing |
-| P2 | Guard proxy chains to the user's `HTTP(S)_PROXY` | Redirect protection is lost behind corporate proxies | Add upstream CONNECT support with the same IP check |
-| P2 | Dedicated DNS-rebinding test | The guard covers it, but there is no test | Resolver fixture that changes its answer between lookups |
+| ✓ | Guard proxy chains to the user's `HTTP(S)_PROXY` | Redirect protection was lost behind corporate proxies | **Done** (unreleased): `tests/test_netguard.py` |
+| ✓ | Dedicated DNS-rebinding test | The guard covered it without a test | **Done** (unreleased): `test_dns_rebinding_is_refused` |
 | P2 | Success words in more languages | Non-English success ends `unverified` | Add words with fixtures per language |
 | P2 | Chromium sandbox on where available | Isolation parity | Try `chromium_sandbox=True` with a fallback and a doctor line |
 | P3 | Caller-supplied action key for the duplicate guard | Guard across sessions and restarts | Design first; needs a schema change |

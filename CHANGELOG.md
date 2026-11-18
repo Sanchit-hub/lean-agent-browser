@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **The private-network guard now works behind your own proxy.** With `HTTP_PROXY` / `HTTPS_PROXY` /
+  `ALL_PROXY` set, the guard used to switch off, so redirect hops to internal addresses went unchecked. It now
+  checks every destination and then chains to your proxy (with its `user:password`, over http:// or
+  https://); `NO_PROXY` hosts connect directly. Only `socks://` proxies still turn it off, with a note.
+- A dedicated DNS-rebinding test: a name that first resolves to a public address and then to
+  169.254.169.254 is refused on the second connection.
 - A link that opens a popup no longer sometimes reports the new tab while it is still `about:blank`: Lean
   waits for the popup to load its own page first. Seen once on the macOS CI runner after the v0.7.0 tag.
 

@@ -73,7 +73,9 @@ localhost, RFC1918, link-local (169.254.169.254), unique-local and reserved addr
    refuses if any address is private, and connects to the address it checked. That covers redirect hops
    (which request routing never sees), DNS rebinding, subresources and WebSockets.
 
-Limit: if `HTTP(S)_PROXY` is set in the environment, the guard proxy is off and redirect hops aren't checked.
+With `HTTP(S)_PROXY` / `ALL_PROXY` set, the guard checks each destination and then chains to that proxy
+(`NO_PROXY` hosts connect directly). Limits: the upstream proxy resolves names itself, so DNS rebinding is
+only covered for direct connections; a `socks://` proxy can't be chained and turns the guard off, with a note.
 
 ## Where it is tested
 
@@ -83,7 +85,7 @@ Limit: if `HTTP(S)_PROXY` is set in the environment, the guard proxy is off and 
 | Outcomes on real flows: rejected login, server rejection, slow submit, `expect=` | `session.py` | `tests/test_reliability.py` |
 | Duplicate guard, retry-safety classes, dry run | `session.py` `act`, `fill_form`, `retry_safety` | `tests/test_reliability.py` |
 | Recovery after re-render, reordered lists | `session.py` `_resolve_or_recover`, `_perform_guarded` | `tests/test_reliability.py`, `tests/test_session.py` |
-| Private network: URL check, both engines, redirect hops | `tools.py`, `engine.py` `_route`, `netguard.py` | `tests/test_engine.py`, `tests/test_tools.py` |
+| Private network: URL check, both engines, redirect hops, DNS rebinding, behind the user's proxy | `tools.py`, `engine.py` `_route`, `netguard.py` | `tests/test_engine.py`, `tests/test_netguard.py`, `tests/test_tools.py` |
 | Uploads limited to allowed folders | `session.py` `_perform` (resolved path) | `tests/test_session.py` |
 | Trace redaction | `trace.py` | `tests/test_trace.py` |
 | MCP contract, invalid calls, stdout purity, isolation, concurrency | `mcp_server.py`, `tools.py` | `tests/test_contract.py` |
