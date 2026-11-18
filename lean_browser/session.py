@@ -212,7 +212,7 @@ EXPECT_COUNT_JS = r"""t => { const n = s => (s || '').replace(/\s+/g, ' ').toLow
   while ((i = body.indexOf(w, i)) !== -1) {
     const pre = body.slice(Math.max(0, i - 30), i), pre40 = body.slice(Math.max(0, i - 40), i);
     const post = body.slice(i + w.length, i + w.length + 30);
-    if (!/(\bnot|\bnever|n[’']t|\bno longer|\bun|\bfailed to|\bcould not be)\s*(\w+\s+){0,2}$/.test(pre)
+    if (!/(\bnot|\bnever|n[’']t|\bno longer|\bun|\bfailed to|\bcould not be)\s*(\w+\s+){0,5}$/.test(pre)
         && !preIntl.test(pre40) && !postIntl.test(post)) c++;
     i += w.length;
   }
@@ -245,6 +245,7 @@ SUCCESS_RE = re.compile(
 ERROR_RE = re.compile(r"\b(errors?|invalid|incorrect|failed|failure|wrong|already (taken|exists|registered|in use)|"
                       r"is taken|denied|not allowed|forbidden|unable|could ?n[o\'’]t|try again|declined|rejected|"
                       r"must (be|have|include|match|accept)|(is|are) required|do(es)? not match|"
+                      r"(page )?not found|404|do(es)?n[\'’]t exist|do(es)? not exist|no longer available|"
                       # a few common error words in other languages
                       r"fehler|fehlgeschlagen|erreur|échec|errore|fallito|fall[oó]|erro|falhou|ошибка|не удалось)\b|"
                       r"错误|失败|エラー|失敗|오류|실패|" + _HI(r"त्रुटि|विफल|असफल"), re.I)
@@ -265,6 +266,35 @@ NEGATED_SUCCESS_RE = re.compile(
     r"(저장|완료|전송|등록|제출)(되지|하지)\s?(않|못)|(저장|완료|전송|등록|제출)(하지 )?못|"
     + _HI(r"सहेजा|सहेजी|सहेजे|सफल|भेजा|भेजी|पूरा") + r"(\s+" + _DEVA + r"+){0,2}?\s+" + _HI(r"नहीं|न"),
     re.I)
+# Visible text lines of the main content (and same-origin frames), leaving out navigation, header, footer, links,
+# buttons, labels and options: the place a page puts a plain "Payment declined." paragraph that headings and live
+# regions miss. Used to find error text that appeared with an action.
+PLAIN_LINES_JS = r"""() => {
+  const SKIP = 'nav,header,footer,aside,a,button,label,option,select,textarea,script,style,noscript,template,[role=navigation],[role=banner],[role=contentinfo],[aria-hidden=true]';
+  const out = new Set();
+  const visit = doc => {
+    if (!doc || !doc.body) return;
+    const w = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+    const parts = new Map();
+    for (let n = w.nextNode(); n; n = w.nextNode()) {
+      const t = n.nodeValue.replace(/\s+/g, ' ').trim();
+      if (!t) continue;
+      const el = n.parentElement;
+      if (!el || el.closest(SKIP)) continue;
+      const r = el.getBoundingClientRect(), cs = doc.defaultView.getComputedStyle(el);
+      if (!(r.width || r.height) || cs.visibility === 'hidden' || cs.display === 'none') continue;
+      const block = el.closest('p,li,div,td,th,dd,dt,section,article,main,span,h1,h2,h3,h4,h5,h6,body') || el;
+      parts.set(block, (parts.get(block) ? parts.get(block) + ' ' : '') + t);
+    }
+    for (const v of parts.values()) if (v.length < 200) out.add(v);
+    for (const f of doc.querySelectorAll('iframe')) { try { visit(f.contentDocument); } catch (e) {} }
+  };
+  visit(document);
+  return [...out]; }"""
+# A route or page path that names an error is not evidence that something worked.
+ERROR_PATH_RE = re.compile(r"(^|[/_.-])(error|errors|fail|failed|failure|denied|declined|rejected|404|not-?found)([/_.?#-]|$)", re.I)
+RETRY_NAME_RE = re.compile(r"^\s*(try again|retry)\b", re.I)
+
 # Text that says the result isn't known yet. While it is on screen, a vanished button proves nothing.
 PENDING_RE = re.compile(r"\b(processing|please wait|loading|submitting|sending|saving|in progress|verifying|"
                         r"authori[sz]ing|redirecting|hold on|one moment)\b|…\s*$|\.\.\.\s*$", re.I)
@@ -358,6 +388,7 @@ class TabState:
     nav_status: int | None = None
     pre_lines: set | None = None        # visible text lines before a submit-like action (pending detection)
     pre_expect: dict | None = None      # expect= state before the action (stale evidence doesn't count)
+    pre_plain: set | None = None        # main-content text lines before a click / press / submit (PLAIN_LINES_JS)
 
     @property
     def page(self) -> Page:
@@ -784,6 +815,7 @@ class Session:
                 raise ActionError("blocked: the form's own validation stops this submit (a browser would too): "
                                   + "; ".join(bad[:4]) + ". Fill those fields, then submit again")
         ts.pre_lines = await self._page_lines(ts) if safety == "unsafe" else None
+        ts.pre_plain = await self._plain_lines(ts) if action in ("click", "press") else None
         # For clicks and key presses, expect= is the evidence, so it has to be new. For field actions the field's
         # own state is the evidence, and expect= is an extra condition that just has to hold afterwards.
         ts.pre_expect = None if action in ("fill", "clear", "select", "check", "uncheck", "upload") \
@@ -834,6 +866,24 @@ class Session:
         except Exception:
             return set()
         return {" ".join(x.split()) for x in lines if 0 < len(x.strip()) < 80}
+
+    async def _plain_lines(self, ts: TabState) -> set[str]:
+        try:
+            return set(await asyncio.wait_for(ts.page.evaluate(PLAIN_LINES_JS), 3))
+        except Exception:  # noqa: BLE001 - unreadable page: no plain-text evidence either way
+            return set()
+
+    async def _plain_errors(self, ts: TabState, after: Snapshot, page_changed: bool) -> list[str]:
+        """Error evidence that headings and live regions miss: new main-content lines with error words, new
+        "Try again" / "Retry" controls, and a route or page path that names an error."""
+        out = []
+        if ts.pre_plain is not None:
+            for t in await self._plain_lines(ts) - ts.pre_plain:
+                if NEGATED_SUCCESS_RE.search(t) or (ERROR_RE.search(t) and not SUCCESS_RE.search(t)):
+                    out.append(f'"{t[:80]}"')
+        if (page_changed or after.data.get("routeChanged")) and ERROR_PATH_RE.search(str(after.data.get("path") or "")):
+            out.append(f"went to an error path: {after.data.get('path')}")
+        return out[:3]
 
     async def _new_pending(self, ts: TabState) -> list[str]:
         pre = ts.pre_lines
@@ -1047,11 +1097,14 @@ class Session:
         if expect and expect["kind"] == "action" and expect["action"] in ("fill", "clear", "select", "check", "uncheck", "upload"):
             states[expect["id"]] = await self._target_state(ts, expect["id"])
         after = await self._take(ts)
+        # The popup's "page" event can land while the snapshot above was being taken (seen on CI).
+        if len(self.tabs) > tabs_before:
+            return await self._new_tab_result(ts, prefix, expect)
         d = diff(before, after)
-        if d == "" and expect and expect.get("action") in ("click", "press") and not ts.notes:
+        if d == "" and expect and expect.get("action") in ("click", "press"):
             # Nothing changed in this tab. A popup's "page" event can arrive after settle on slow machines,
             # so give a new tab a short grace period before reporting "no visible change". Clicks that did
-            # change something never wait.
+            # change something never wait. A dialog note doesn't skip this: a dialog can come before the popup.
             for _ in range(15):
                 if len(self.tabs) > tabs_before:
                     return await self._new_tab_result(ts, prefix, expect)
@@ -1086,8 +1139,30 @@ class Session:
                                          if ERROR_RE.search(t) or NEGATED_SUCCESS_RE.search(t)][:3]
                         sig["success"] = [t for t in await self._page_lines(ts) - (ts.pre_lines or set())
                                           if SUCCESS_RE.search(t) and not ERROR_RE.search(t) and not NEGATED_SUCCESS_RE.search(t)][:1]
+            evidence_action = expect["kind"] == "form" or expect.get("action") in ("click", "press")
+            if evidence_action:
+                sig["plain_errors"] = await self._plain_errors(ts, after, page_changed)
+                # An optimistic toast ("Saved") that the page replaces with an error a moment later: when a live
+                # message is the only evidence for a click or submit, read the page again ~1.2 s later before
+                # trusting it.
+                if sig["success"] and not sig["errors"] and not sig["plain_errors"] and not page_changed \
+                        and not after.data.get("routeChanged") and not sig["target_gone"] and not sig["cleared"]:
+                    await asyncio.sleep(1.2)
+                    after2 = await self._take(ts)
+                    sig2 = self._signals(ts, before, after2, diff(before, after2) is None, expect)
+                    sig2["plain_errors"] = await self._plain_errors(ts, after2, False)
+                    if sig2["errors"] or sig2["plain_errors"] or not sig2["success"]:
+                        after, sig = after2, sig2
+                        d = diff(before, after)
+                        page_changed = d is None
+                        changed = page_changed or bool(d)
+            # A dialog whose message is an error ("Coupon code is invalid") is the page saying no.
+            for n in notes.splitlines():
+                if n.startswith("dialog ") and (ERROR_RE.search(n[7:]) or NEGATED_SUCCESS_RE.search(n[7:])):
+                    sig["errors"].append(n[:100])
             exp_res = await self._check_expect(ts, expect.get("expect"), after) if expect.get("expect") else None
-            status = self._status(expect, states, after, page_changed, changed, settled, bool(notes), sig, exp_res)
+            dialog = any(n.startswith("dialog ") for n in notes.splitlines())  # not "+tab opened" or other notes
+            status = self._status(expect, states, after, page_changed, changed, settled, dialog, sig, exp_res)
             if waited:
                 notes = (notes + "\n" if notes else "") + f"waited {waited:.1f}s for the page to finish processing"
         head = status + prefix + (notes + "\n" if notes else "")
@@ -1145,8 +1220,14 @@ class Session:
                 errors.append(f'"{t[:80]}"')
         if ts.nav_status and ts.nav_status >= 400 and page_changed:
             errors.append(f"HTTP {ts.nav_status}")
+        standing = set(_texts(before))  # a heading that was there before the action ("Welcome back") is not news
         success = [t for k, t in new if SUCCESS_RE.search(t) and not ERROR_RE.search(t) and not NEGATED_SUCCESS_RE.search(t)
-                   and (k == "live" or page_changed or k == "h")]
+                   and not PENDING_RE.search(t) and (k, t) not in standing and (k == "live" or page_changed or k == "h")]
+        bnames = {(e.get("role"), e.get("name")) for e in bi.values()}
+        for e in ai.values():  # a new "Try again" button is the page saying it failed
+            if e.get("role") in ("button", "link") and RETRY_NAME_RE.search(e.get("name") or "") \
+                    and (e.get("role"), e.get("name")) not in bnames:
+                errors.append(f'new "{e.get("name")}" control')
         pending = [t for k, t in _texts(after) + _plain_texts(after) if PENDING_RE.search(t) and len(t) < 80]
         # After a submit the page changed, yet the same form came back with the same headings and no message:
         # a silent rejection or reload, not proof of success.
@@ -1263,9 +1344,18 @@ class Session:
             submit_like = expect.get("safety") == "unsafe"
         # click / press / form submit: the outcome needs evidence beyond "the event was sent".
         uncertain = expect.get("uncertain")
+        plain = sig.get("plain_errors") or []
         if sig["errors"]:
             word = "blocked"
             evidence += nav + ["page shows errors: " + "; ".join(sig["errors"][:3])]
+        elif plain and not sig["success"] and not (exp_res and exp_res[0]):
+            word = "blocked"
+            evidence += nav + ["page shows errors: " + "; ".join(plain)]
+        elif plain:
+            # Success and error text at once: don't claim either.
+            word = "unverified"
+            evidence += nav + ([exp_res[1]] if exp_res else [f'success message "{sig["success"][0][:60]}"']) + \
+                ["but the page also shows: " + "; ".join(plain)]
         elif exp_res is not None:
             word = "verified" if exp_res[0] else ("timed_out" if not settled else "unverified")
             evidence += nav + [exp_res[1]]
@@ -1399,6 +1489,7 @@ class Session:
         uncertain = None
         ts.nav_status = None
         ts.pre_lines = await self._page_lines(ts) if submit else None
+        ts.pre_plain = await self._plain_lines(ts) if submit else None
         ts.pre_expect = await self._expect_pre(ts, expect)
         if submit and not errors:
             try:

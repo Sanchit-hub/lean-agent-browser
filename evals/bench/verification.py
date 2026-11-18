@@ -456,22 +456,11 @@ def classify(happened: bool, status: str) -> str:
     return "false_unverified" if happened else "correctly_unverified"
 
 
-# Cases that currently get a false `verified` (release-blocking). tests/test_verification.py xfails them
-# strictly, so a fix makes the test fail until the id is removed here.
+# Cases that currently get a false `verified`. tests/test_verification.py xfails them strictly, so a fix makes
+# the test fail until the id is removed here.
+# rt-fill-reverted-late: a field verified after the page settled, which the page itself reverts 1.2 s later
+# (a rejected autosave). A field action's `verified` means "held the value once the page settled"; a later change
+# by the page is outside the action's window (docs/RELIABILITY.md, Known gaps). Kept as a visible known gap.
 KNOWN_FALSE_VERIFIED: set[str] = {
-    "rt-nav-200-body-declined",
-    "rt-spa-error-route",
-    "rt-toast-saved-then-error",
-    "rt-button-replaced-try-again",
-    "rt-live-loading-complete",
-    "rt-form-cleared-on-reject",
-    "rt-iframe-declined",
-    "rt-dialog-error",
-    "rt-login-welcome-heading",
-    "rt-silent-reload-saved-heading",
     "rt-fill-reverted-late",
-    "rt-soft-404",
-    "rt-expect-gone-error-plain",
-    "rt-expect-long-negation",
-    "rt-expect-url-error-route",
 }

@@ -37,8 +37,18 @@ with `submit`): `verified` needs one of
   - `gone:` needs an element that existed before.
   After a new tab opens, the expectation is checked in that tab.
 
+Errors win over every success signal above:
+- New error text in a heading or live region, field errors, HTTP ≥ 400, a dialog whose message is an error, or a
+  new "Try again" / "Retry" control make it `blocked`.
+- New error text in the main content (plain paragraphs too, and same-origin frames; navigation, header, footer,
+  links and buttons left out), or landing on an error path (`/error`, `/failed`, `/404`…), make it `blocked`;
+  with a success signal at the same time it is `unverified`, since the page says both.
+- A heading that was already there before the action ("Welcome back" on a login page that comes back) is not a
+  new success message, and neither is a "Loading…"-style text ("Loading complete").
+- When a live message is the only evidence, the page is read again ~1.2 s later, so an optimistic "Saved" that
+  turns into an error is caught.
+
 Otherwise:
-- New error text, field errors or HTTP ≥ 400 make it `blocked`.
 - While the page shows a new "Processing…" / "Please wait" / "Loading…", Lean waits up to 8 s for the real answer.
 - A dialog that was answered with nothing changing afterwards, or a new tab opening, is not proof for a submit.
 - Time-like texts that only tick ("Last updated 3s ago") are not new evidence.
@@ -124,6 +134,10 @@ uploads the JSON. A failure means look, not necessarily a bug: check whether the
 ```
 
 ## Known gaps
+
+- A field action is `verified` when the field holds the value once the page has settled. A page that reverts
+  it on its own later (a rejected autosave 1.2 s afterwards) is not seen: `rt-fill-reverted-late` stays in
+  `KNOWN_FALSE_VERIFIED` as a visible gap.
 
 - Success and error words cover eleven languages, a handful of words each. Other languages, and wordings
   outside the list, end `unverified`: honest but unhelpful, so pass `expect=`. The `expect=` negation check

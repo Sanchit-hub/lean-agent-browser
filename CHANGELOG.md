@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **Red-team audit: 14 false `verified` fixed (release-blocking).** 23 new adversarial verification cases found 15
+  pages where an action that failed was reported `verified` on both engines. Now: error text in plain paragraphs
+  (and same-origin frames) and error routes count against success; a page that shows success and error text at
+  once is `unverified`; a heading already on the page before the action, or "Loading complete", isn't a success
+  message; a live "Saved" that is the only evidence is re-read 1.2 s later; an error dialog or a new "Try again"
+  button means `blocked`; "page not found" / "doesn't exist" are error words; `expect=` sees negations up to five
+  words back ("weren't able to get your draft saved"). One case remains a documented gap: a field the page
+  reverts on its own 1.2 s after the fill.
 - WebSockets on Obscura: its `WebSocket` fakes a successful open and never connects, so a live page looked
   connected. Lean now makes it fail honestly there, routes pages that open one at load to Chromium, and after an
   action that opens one says so and opens that host in Chromium from then on.
@@ -42,8 +50,11 @@
   "保存されていません", "सहेजा नहीं") count as errors. Hindi error words now match (Devanagari vowel signs broke
   `\b`). New verification cases: `success-german`, `success-chinese`, `success-japanese`, `negated-german`,
   `negated-spanish`, `negated-japanese`, `success-and-error-chinese`.
-- A link that opens a popup no longer sometimes reports the new tab while it is still `about:blank`: Lean
-  waits for the popup to load its own page first. Seen once on the macOS CI runner after the v0.7.0 tag.
+- Popups on slow machines (CI #43 and #49 on macOS): a popup whose "page" event arrived while the after-click
+  snapshot was being taken was reported as `verified (dialog shown)` without the new tab, because its
+  "+tab opened" note switched off the late-popup re-check and was read as a dialog. Lean now re-checks for a new
+  tab after that snapshot, counts only real dialog notes as a dialog, keeps the grace period after a dialog, and
+  waits for a popup to leave `about:blank` before reporting it.
 
 ## 0.7.0 (2026-11-18): source-level audit, cycle 002
 

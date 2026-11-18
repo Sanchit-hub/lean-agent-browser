@@ -1,5 +1,6 @@
 """Session layer (act, fill_form, settle, diff, dialogs, tabs, uploads) on both engines,
 verified against the fixture server's recorded submissions."""
+import asyncio
 import json
 import re
 import urllib.request
@@ -275,6 +276,50 @@ async def test_late_popup_is_still_reported(s):
         a.addEventListener('click', e => { e.preventDefault(); setTimeout(() => window.open(a.href, '_blank'), 700); }); }""")
     d = await s.act("click", idof(out, 'link "Open the developer console"'))
     assert d.startswith("status: verified (new tab opened)") and len(s.tabs) == 2
+    assert "page: Developer console" in d
+
+
+async def test_popup_that_arrives_during_the_after_snapshot_is_reported(s, monkeypatch):
+    """CI #43 / #49: the popup's "page" event landed after _after's first tab check but while the after-snapshot
+    was being taken. Its "+tab opened" note then switched off the late-popup re-check and was read as a dialog:
+    "status: verified (dialog shown)" without the new tab's page. Made deterministic here by opening the popup
+    from inside the after-snapshot."""
+    if s.engine != "chromium":
+        pytest.skip("Obscura has no popups (window.open returns null)")
+    out = await s.open(s.base + "/docs.html")
+    await s.cur.page.evaluate("""() => { const a = document.querySelector('a[target=_blank]');
+        a.addEventListener('click', e => { e.preventDefault(); window.__href = a.href; }); }""")
+    real_take, fired = s._take, []
+
+    async def take(ts, *a, **k):
+        if not fired and ts is s.tabs[0] and await ts.page.evaluate("() => !!window.__href"):
+            fired.append(1)
+            n = len(s.tabs)
+            await ts.page.evaluate("() => { window.open(window.__href, '_blank'); window.__href = null; }")
+            for _ in range(50):  # wait until on_page has run, as it did on the CI runner
+                if len(s.tabs) > n:
+                    break
+                await asyncio.sleep(0.05)
+        return await real_take(ts, *a, **k)
+    monkeypatch.setattr(s, "_take", take)
+    d = await s.act("click", idof(out, 'link "Open the developer console"'))
+    assert fired, "the popup was not opened during the after-snapshot"
+    assert d.startswith("status: verified (new tab opened)") and len(s.tabs) == 2, d
+    assert "dialog shown" not in d
+    assert "page: Developer console" in d
+
+
+async def test_dialog_then_late_popup_reports_both(s):
+    """A dialog note must not switch off the late-popup re-check: both the dialog and the new tab are reported."""
+    if s.engine != "chromium":
+        pytest.skip("Obscura has no popups (window.open returns null)")
+    out = await s.open(s.base + "/docs.html")
+    await s.cur.page.evaluate("""() => { const a = document.querySelector('a[target=_blank]');
+        a.addEventListener('click', e => { e.preventDefault(); alert('popup delayed');
+            setTimeout(() => window.open(a.href, '_blank'), 700); }); }""")
+    d = await s.act("click", idof(out, 'link "Open the developer console"'))
+    assert d.startswith("status: verified (new tab opened)") and len(s.tabs) == 2, d
+    assert "dialog alert 'popup delayed' accepted" in d
     assert "page: Developer console" in d
 
 
