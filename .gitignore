@@ -18,3 +18,4 @@ spike/results/
 .env
 dist/
 build/
+.claude/worktrees/
