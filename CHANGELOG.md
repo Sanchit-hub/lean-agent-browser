@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Success words in German, French, Italian, Spanish, Portuguese, Russian, Chinese, Japanese, Korean and Hindi
+  (cycle-002 backlog P2): a submit whose only evidence is "Ihre Änderungen wurden gespeichert" or "保存成功" is
+  now `verified` instead of `unverified`. Negated forms ("nicht gespeichert", "no se ha guardado",
+  "保存されていません", "सहेजा नहीं") count as errors. Hindi error words now match (Devanagari vowel signs broke
+  `\b`). New verification cases: `success-german`, `success-chinese`, `success-japanese`, `negated-german`,
+  `negated-spanish`, `negated-japanese`, `success-and-error-chinese`.
 - A link that opens a popup no longer sometimes reports the new tab while it is still `about:blank`: Lean
   waits for the popup to load its own page first. Seen once on the macOS CI runner after the v0.7.0 tag.
 

@@ -212,20 +212,51 @@ EXPECT_COUNT_JS = r"""t => { const n = s => (s || '').replace(/\s+/g, ' ').toLow
 
 _norm = lambda x: " ".join(str(x or "").split()).lower()
 
-# Outcome signals. English-only heuristics: a site that shows neither stays "unverified"; pass expect= then.
-SUCCESS_RE = re.compile(r"\b(thank(s| you)|success(ful(ly)?)?|saved|created|received|submitted|placed|confirmed|sent|"
-                        r"updated|added|welcome|complete(d)?|booked|registered|published|posted)\b", re.I)
+# Outcome signals. English plus common words in German, French, Italian, Spanish, Portuguese, Russian, Chinese,
+# Japanese, Korean and Hindi; a site that shows none of them stays "unverified": pass expect= then.
+# \b only works for Latin and Cyrillic here. CJK has no word boundaries, so those words stand outside \b, and
+# Devanagari vowel signs aren't \w in Python, so Hindi words get their own lookarounds.
+_DEVA = r"[\u0900-\u097F]"
+_HI = lambda words: r"(?<!" + _DEVA + r")(" + words + r")(?!" + _DEVA + r")"
+# Non-English success words that also appear in the negation check below.
+_SUCCESS_WORDS_INTL = (
+    r"gespeichert|erfolgreich|gesendet|versendet|abgeschickt|bestätigt|erstellt|aktualisiert|abgeschlossen|"
+    r"enregistrée?s?|réussie?s?|envoyée?s?|confirmée?s?|créée?s?|terminée?s?|"
+    r"salvat[oaie]|completat[oaie]|inviat[oaie]|confermat[oaie]|creat[oai]|riuscit[oaie]|"
+    r"guardad[oa]s?|exitos[oa]s?|exitosamente|enviad[oa]s?|confirmad[oa]s?|cread[oa]s?|completad[oa]s?|"
+    r"salv[oa]s?(?!\s+(que|el|la|los|las|en)\b)|conclu[íi]d[oa]s?|criad[oa]s?|"
+    r"сохранен[оаы]?|сохранён|успешно|отправлен[оаы]?|создан[оаы]?|подтвержден[оаы]?|выполнен[оаы]?")
+SUCCESS_RE = re.compile(
+    r"\b(thank(s| you)|success(ful(ly)?)?|saved|created|received|submitted|placed|confirmed|sent|"
+    r"updated|added|welcome|complete(d)?|booked|registered|published|posted|"
+    r"danke|vielen dank|merci(?!\s+(de|d['’])\b)|succès|grazie|successo|gracias|éxito|obrigad[oa]s?|sucesso|"
+    r"спасибо|готово|" + _SUCCESS_WORDS_INTL + r")\b|"
+    r"成功|已保存|已提交|已发送|已完成|谢谢|感谢|保存しました|保存されました|送信しました|登録しました|完了|ありがとう|"
+    r"저장(되었|됐|했|됨|완료)|완료|감사합니다|성공|" + _HI(r"सफल|सफलतापूर्वक|सहेजा|सहेजी|सहेजे|धन्यवाद|भेजा गया"),
+    re.I)
 ERROR_RE = re.compile(r"\b(errors?|invalid|incorrect|failed|failure|wrong|already (taken|exists|registered|in use)|"
                       r"is taken|denied|not allowed|forbidden|unable|could ?n[o\'’]t|try again|declined|rejected|"
                       r"must (be|have|include|match|accept)|(is|are) required|do(es)? not match|"
-                      # a few common error words in other languages (success words stay English-only)
-                      r"fehler|fehlgeschlagen|erreur|échec|errore|fallito|fall[oó]|erro|falhou|ошибка|не удалось|"
-                      r"त्रुटि|विफल)\b|错误|失败|エラー|失敗|오류|실패", re.I)
+                      # a few common error words in other languages
+                      r"fehler|fehlgeschlagen|erreur|échec|errore|fallito|fall[oó]|erro|falhou|ошибка|не удалось)\b|"
+                      r"错误|失败|エラー|失敗|오류|실패|" + _HI(r"त्रुटि|विफल|असफल"), re.I)
 _SUCCESS_WORDS = (r"(sent|saved|submitted|placed|confirmed|created|received|updated|added|completed?|booked|"
-                  r"registered|published|posted|processed|accepted|approved|delivered|successful(ly)?)")
-# "was not saved", "wasn't sent", "could not be completed", "never received", "unsuccessful": failures that
-# contain a success word. They count as errors and never as success.
-NEGATED_SUCCESS_RE = re.compile(r"(\b(not|never|no longer)\b|n[\'’]t\b)(\s+\w+){0,3}?\s+" + _SUCCESS_WORDS + r"\b|\bunsuccessful", re.I)
+                  r"registered|published|posted|processed|accepted|approved|delivered|successful(ly)?|"
+                  + _SUCCESS_WORDS_INTL + r")")
+_NEGATORS = (r"not|never|no longer|nicht|kein(e[nmrs]?)?|nie|pas|non|jamais|aucune?|nessun[oa]?|no(?!\s+\d)|nunca|"
+             r"ning[uú]n[oa]?|não|nao|не|ни|нет")
+# "was not saved", "wasn't sent", "could not be completed", "never received", "unsuccessful", "nicht gespeichert",
+# "non enregistré", "no guardado", "не сохранено", "未保存", "保存されていません", "저장되지 않", "सहेजा नहीं":
+# failures that contain a success word. They count as errors and never as success.
+NEGATED_SUCCESS_RE = re.compile(
+    r"(\b(" + _NEGATORS + r")\b|n[\'’]t\b)(\s+\w+){0,3}?\s+" + _SUCCESS_WORDS + r"\b|"
+    r"\b(unsuccessful|erfolglos|nicht erfolgreich|(sans|senza|sin|sem) (succès|successo|éxito|sucesso)|"
+    r"неудачно|безуспешно|неуспешно)\b|"
+    r"[未没沒]有?(保存|提交|发送|發送|完成|成功)|不成功|"
+    r"(保存|送信|登録|完了)(されて|して)?(いません|できません|されません|しません)|できませんでした|"
+    r"(저장|완료|전송|등록|제출)(되지|하지)\s?(않|못)|(저장|완료|전송|등록|제출)(하지 )?못|"
+    + _HI(r"सहेजा|सहेजी|सहेजे|सफल|भेजा|भेजी|पूरा") + r"(\s+" + _DEVA + r"+){0,2}?\s+" + _HI(r"नहीं|न"),
+    re.I)
 # Text that says the result isn't known yet. While it is on screen, a vanished button proves nothing.
 PENDING_RE = re.compile(r"\b(processing|please wait|loading|submitting|sending|saving|in progress|verifying|"
                         r"authori[sz]ing|redirecting|hold on|one moment)\b|…\s*$|\.\.\.\s*$", re.I)
