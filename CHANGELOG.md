@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- A link that opens a popup no longer sometimes reports the new tab while it is still `about:blank`: Lean
+  waits for the popup to load its own page first. Seen once on the macOS CI runner after the v0.7.0 tag.
+
 ## 0.7.0 (2026-11-18): source-level audit, cycle 002
 
 Every public call was traced from MCP to the engine and tested against fixtures built to break it. Findings,

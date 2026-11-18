@@ -1002,6 +1002,16 @@ class Session:
 
     async def _new_tab_result(self, ts: TabState, prefix: str, expect: dict | None) -> str:
         nts = self.cur
+        # A popup's "page" event can fire while it is still on about:blank, before its own navigation starts.
+        # Wait for it to load its real page (Playwright's documented popup pattern), briefly.
+        try:
+            for _ in range(30):
+                if nts.page.url not in ("", "about:blank"):
+                    break
+                await asyncio.sleep(0.1)
+            await nts.page.wait_for_load_state("domcontentloaded", timeout=5000)
+        except Exception:  # noqa: BLE001 - a page that never loads is reported by the snapshot below
+            pass
         await self._settle(nts)
         note = self._drain(ts)
         submit_like = expect and (expect.get("submitted") if expect.get("kind") == "form" else expect.get("safety") == "unsafe")
