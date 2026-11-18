@@ -157,14 +157,18 @@ async def test_one_key_across_two_servers_sends_once(base, tmp_path):  # noqa: F
         res = await asyncio.gather(*(c.call_tool("act", {"action": "click", "id": int(i), "key": "order-77"})
                                      for c, i in zip((a, b), ids)))
         texts = [r.content[0].text for r in res]
-        assert sum("status: verified" in t for t in texts) == 1, texts
+        won = [bool(re.search(r"(?m)^status: verified", t)) and not t.startswith("Error") for t in texts]
+        assert won.count(True) == 1, texts
         assert sum("duplicate: key" in t for t in texts) == 1, texts
         assert len(subs(base, "order")) == 1
-        # an old client with no key: unchanged behaviour
-        page = await b.call_tool("open", {"url": base + "/order.html"})
+        # an old client with no key: unchanged behaviour (the one whose keyed call was blocked, so its own
+        # per-page guard has nothing to object to)
+        c = (a, b)[won.index(False)]
+        page = await c.call_tool("open", {"url": base + "/order.html"})
         i = re.search(r'(\d+): button "Place order"', page.content[0].text).group(1)
-        assert "status: verified" in (await b.call_tool("act", {"action": "click", "id": int(i)})).content[0].text
-        assert len(subs(base, "order")) == 2
+        last = (await c.call_tool("act", {"action": "click", "id": int(i)})).content[0].text
+        assert re.search(r"(?m)^status: verified", last) and not last.startswith("Error"), last
+        assert len(subs(base, "order")) == 2, (texts, page.content[0].text[:600], last, subs(base, "order"))
 
 
 async def test_concurrent_calls_on_one_server_are_serialized(base):  # noqa: F811
