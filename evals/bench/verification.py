@@ -12,7 +12,7 @@ CASES: list[tuple[str, str, str, str, str | None, bool, str]] = []
 
 
 def case(cid, path, action, target, value, happened, note, page):
-    PAGES[path] = page
+    PAGES[path.split("?")[0]] = page
     CASES.append((cid, path, action, target, value, happened, note))
 
 
@@ -87,7 +87,7 @@ CASES_EXPECT: list[tuple[str, str, str, str, str | None, str, bool, str]] = []
 
 
 def expect_case(cid, path, action, target, value, expect, happened, note, page):
-    PAGES[path] = page
+    PAGES[path.split("?")[0]] = page  # the fixture server looks pages up without the query string
     CASES_EXPECT.append((cid, path, action, target, value, expect, happened, note))
 
 
@@ -214,7 +214,7 @@ async def run_expect_case(sess, base: str, c) -> tuple[str, str]:
     out = await sess.open(base + path)
     m = re.search(r"(\d+): " + target, out)
     if not m:
-        return "error", f"target {target!r} not found in:\n{out}"
+        return "setup_error", f"target {target!r} not found in:\n{out}"
     try:
         res = await sess.act(action, int(m.group(1)), value, expect=expect)
     except Exception as e:  # noqa: BLE001
@@ -230,7 +230,7 @@ async def run_case(sess, base: str, c) -> tuple[str, str]:
     out = await sess.open(base + path)
     m = re.search(r"(\d+): " + target, out)
     if not m:
-        return "error", f"target {target!r} not found in:\n{out}"
+        return "setup_error", f"target {target!r} not found in:\n{out}"
     try:
         res = await sess.act(action, int(m.group(1)), value)
     except Exception as e:  # noqa: BLE001 - a refusal is an honest non-verified outcome
@@ -240,6 +240,8 @@ async def run_case(sess, base: str, c) -> tuple[str, str]:
 
 
 def classify(happened: bool, status: str) -> str:
+    if status == "setup_error":  # the case never ran (page or target missing): a broken test, not a result
+        return "SETUP_ERROR"
     if status == "verified":
         return "true_verified" if happened else "FALSE_VERIFIED"
     if status in ("timed_out", "ambiguous"):

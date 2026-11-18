@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- The `expect-url-already` verification case (v0.7.0 finding 3) never actually ran: its page was not found and
+  that counted as "not verified". Fixed; it now runs and is correctly `unverified` on both engines. A case that
+  can't find its page or target is now a setup error that fails the matrix instead of hiding.
 - **The private-network guard now works behind your own proxy.** With `HTTP_PROXY` / `HTTPS_PROXY` /
   `ALL_PROXY` set, the guard used to switch off, so redirect hops to internal addresses went unchecked. It now
   checks every destination and then chains to your proxy (with its `user:password`, over http:// or

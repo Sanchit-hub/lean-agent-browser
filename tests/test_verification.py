@@ -18,6 +18,7 @@ async def test_verification_honesty(base, engine, case):  # noqa: F811
     finally:
         await bm.close()
     cls = classify(case[5], status)
+    assert cls != "SETUP_ERROR", f"{case[0]} on {engine}: the case never ran\n{out}"
     assert cls != "FALSE_VERIFIED", f"{case[0]} ({case[6]}) on {engine}: claimed verified\n{out}"
     if case[5]:
         assert cls == "true_verified", f"{case[0]} ({case[6]}) on {engine}: outcome happened but status {status}\n{out}"
@@ -35,6 +36,7 @@ async def test_expect_needs_fresh_unnegated_evidence(base, engine, case):  # noq
     finally:
         await bm.close()
     cls = classify(case[6], status)
+    assert cls != "SETUP_ERROR", f"{case[0]} on {engine}: the case never ran\n{out}"
     assert cls != "FALSE_VERIFIED", f"{case[0]} ({case[7]}) on {engine}: claimed verified\n{out}"
     if case[6]:
         assert cls == "true_verified", f"{case[0]} ({case[7]}) on {engine}: status {status}\n{out}"

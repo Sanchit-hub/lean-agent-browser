@@ -4,7 +4,8 @@
   .venv/bin/python scripts/verification_matrix.py --runs 10  # repeated runs (release evidence)
   .venv/bin/python scripts/verification_matrix.py --json out.json
 
-Exit code 1 if any run reports `verified` for an outcome that did not happen (false verified).
+Exit code 1 if any run reports `verified` for an outcome that did not happen (false verified), or if a case
+couldn't run at all (setup error: its page or target is missing).
 No LLM involved: the fixture pages decide whether the outcome happened.
 """
 from __future__ import annotations
@@ -65,8 +66,8 @@ async def main() -> int:
                     matrix[cls] += 1
                     rows.append({"case": c[0], "engine": engine, "run": r + 1, "happened": happened, "status": status,
                                  "class": cls, "seconds": round(secs, 2)})
-                    if cls == "FALSE_VERIFIED":
-                        print(f"FALSE VERIFIED  {engine:8} {c[0]}: {out.splitlines()[0] if out else ''}")
+                    if cls in ("FALSE_VERIFIED", "SETUP_ERROR"):
+                        print(f"{cls.replace('_', ' '):15} {engine:8} {c[0]}: {out.splitlines()[0] if out else ''}")
     finally:
         srv.shutdown()
     by_case = collections.defaultdict(collections.Counter)
@@ -82,7 +83,7 @@ async def main() -> int:
     print(f"action time p50 {secs[len(secs) // 2]:.2f}s, p95 {secs[int(len(secs) * 0.95) - 1]:.2f}s over {len(rows)} runs")
     if a.json:
         Path(a.json).write_text(json.dumps({"version": __version__, "runs": a.runs, "matrix": matrix, "rows": rows}, indent=1))
-    return 1 if matrix["FALSE_VERIFIED"] else 0
+    return 1 if matrix["FALSE_VERIFIED"] or matrix["SETUP_ERROR"] else 0
 
 
 if __name__ == "__main__":
