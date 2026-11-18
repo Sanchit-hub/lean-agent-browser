@@ -399,19 +399,27 @@ class BrowserManager:
 
     async def _ensure_guard(self) -> str | None:
         """Start the connect-time private-network guard once (both engines use it). None when private network is
-        allowed, when Obscura is limited to localhost anyway, or when the user's own proxy is configured."""
+        allowed, when Obscura is limited to localhost anyway, or when the user's proxy can't be chained (socks)."""
         if self.allow_private_network or self.localhost_only:
             return None
         if self._guard:
             return self._guard.url
-        if any(os.environ.get(k) for k in ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY")):
+        from lean_browser.netguard import NetGuard, env_has_proxy, env_upstreams
+        http_up = tunnel_up = None
+        if env_has_proxy():
+            try:
+                http_up, tunnel_up = env_upstreams()
+            except ValueError as e:
+                if not getattr(self, "_proxy_noted", False):
+                    self._proxy_noted = True
+                    self._note(f"{e}; the connect-time private-network guard is off, request-level checks "
+                               "still apply, redirect hops are not checked")
+                return None
             if not getattr(self, "_proxy_noted", False):
                 self._proxy_noted = True
-                self._note("an HTTP(S)_PROXY is set: the connect-time private-network guard is off; "
-                           "request-level checks still apply, redirect hops are not checked")
-            return None
-        from lean_browser.netguard import NetGuard
-        self._guard = await NetGuard(lambda h: self._note(f"blocked private-network connection to {h}")).start()
+                self._note("using your HTTP(S)_PROXY behind the private-network guard")
+        self._guard = await NetGuard(lambda h: self._note(f"blocked private-network connection to {h}"),
+                                     http_upstream=http_up, tunnel_upstream=tunnel_up).start()
         return self._guard.url
 
     # ---------- engines ----------

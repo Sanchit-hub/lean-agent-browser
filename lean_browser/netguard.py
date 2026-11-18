@@ -8,15 +8,25 @@ and then connects to the exact address it checked. Every hop of a redirect, ever
 WebSocket goes through it.
 
 It listens on 127.0.0.1 only, on a random port, and lives as long as its BrowserManager.
+
+Behind the user's own proxy (HTTP_PROXY / HTTPS_PROXY / ALL_PROXY, http:// or https:// proxies), the guard
+still checks every destination and then chains to that proxy instead of connecting itself. Hosts in NO_PROXY
+connect directly, still checked. The upstream proxy resolves the name itself, so DNS rebinding is only
+covered for direct connections (documented in docs/RELIABILITY.md).
 """
 from __future__ import annotations
 
 import asyncio
+import base64
 import ipaddress
 import logging
+import os
 import socket
+import ssl
+from dataclasses import dataclass
 from typing import Callable
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
+from urllib.request import proxy_bypass_environment
 
 log = logging.getLogger("lean_browser.netguard")
 
@@ -42,9 +52,51 @@ async def resolve_public(host: str, port: int) -> str:
     return addrs[0]
 
 
+@dataclass
+class Upstream:
+    """The user's own proxy. auth is the ready Proxy-Authorization value, if the URL carried user:password."""
+    host: str
+    port: int
+    tls: bool = False
+    auth: str | None = None
+
+    @classmethod
+    def parse(cls, url: str) -> "Upstream":
+        u = urlsplit(url if "://" in url else "http://" + url)
+        if u.scheme not in ("http", "https") or not u.hostname:
+            raise ValueError(f"unsupported proxy {u.scheme}://: only http:// and https:// proxies can be chained")
+        auth = None
+        if u.username is not None:
+            raw = f"{unquote(u.username)}:{unquote(u.password or '')}".encode()
+            auth = "Basic " + base64.b64encode(raw).decode()
+        return cls(u.hostname, u.port or (443 if u.scheme == "https" else 80), u.scheme == "https", auth)
+
+
+def env_upstreams(env: dict | None = None) -> tuple[Upstream | None, Upstream | None]:
+    """(proxy for plain http, proxy for tunnels: https / wss) from the environment, like curl reads them.
+    Raises ValueError for a proxy that can't be chained (socks)."""
+    env = os.environ if env is None else env
+
+    def get(*names):
+        for n in names:
+            v = env.get(n) or env.get(n.lower())
+            if v:
+                return Upstream.parse(v)
+        return None
+    return get("HTTP_PROXY", "ALL_PROXY"), get("HTTPS_PROXY", "ALL_PROXY")
+
+
+def env_has_proxy(env: dict | None = None) -> bool:
+    env = os.environ if env is None else env
+    return any(env.get(k) or env.get(k.lower()) for k in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"))
+
+
 class NetGuard:
-    def __init__(self, on_block: Callable[[str], None] | None = None):
+    def __init__(self, on_block: Callable[[str], None] | None = None, http_upstream: Upstream | None = None,
+                 tunnel_upstream: Upstream | None = None, no_proxy: Callable[[str], bool] | None = None):
         self.on_block = on_block or (lambda host: None)
+        self.http_upstream, self.tunnel_upstream = http_upstream, tunnel_upstream
+        self.no_proxy = no_proxy or (lambda host: bool(proxy_bypass_environment(host)))
         self.server: asyncio.base_events.Server | None = None
         self.port = 0
         self.blocked: list[str] = []
@@ -96,6 +148,20 @@ class NetGuard:
             except Exception:
                 pass
 
+    async def _refuse(self, writer, status: bytes):
+        writer.write(status)
+        await writer.drain()
+        writer.close()
+
+    def _upstream(self, host: str, tunnel: bool) -> Upstream | None:
+        up = self.tunnel_upstream if tunnel else self.http_upstream
+        return None if up is None or self.no_proxy(host.strip("[]")) else up
+
+    async def _connect_upstream(self, up: Upstream):
+        ctx = ssl.create_default_context() if up.tls else None
+        return await asyncio.wait_for(asyncio.open_connection(up.host, up.port, ssl=ctx,
+                                                              server_hostname=up.host if ctx else None), 20)
+
     async def _open(self, writer, host: str, port: int):
         try:
             ip = await resolve_public(host, port)
@@ -113,7 +179,43 @@ class NetGuard:
             return None
         return await asyncio.wait_for(asyncio.open_connection(ip, port), 20)
 
+    async def _check(self, writer, host: str, port: int) -> bool:
+        """The destination check alone (used before chaining to an upstream proxy)."""
+        try:
+            await resolve_public(host, port)
+        except PermissionError:
+            self._block(host.strip("[]"))
+            await self._refuse(writer, b"HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n"
+                                       b"Blocked by Lean Agent Browser: private-network address")
+            return False
+        except OSError:
+            # The upstream proxy may resolve names this machine can't (split DNS); let it try.
+            return True
+        return True
+
     async def _tunnel(self, reader, writer, host: str, port: int):
+        up = self._upstream(host, tunnel=True)
+        if up:
+            if not await self._check(writer, host, port):
+                return
+            ur, uw = await self._connect_upstream(up)
+            target = f"{host}:{port}"
+            req = f"CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n"
+            if up.auth:
+                req += f"Proxy-Authorization: {up.auth}\r\n"
+            uw.write((req + "\r\n").encode("latin-1"))
+            await uw.drain()
+            head = await asyncio.wait_for(ur.readuntil(b"\r\n\r\n"), 30)
+            if head.split(b" ", 2)[1:2] != [b"200"]:
+                writer.write(head)  # the browser sees the upstream proxy's own answer (407, 403, ...)
+                await writer.drain()
+                writer.close()
+                uw.close()
+                return
+            writer.write(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+            await writer.drain()
+            await _pipe_both(reader, writer, ur, uw)
+            return
         conn = await self._open(writer, host, port)
         if not conn:
             return
@@ -128,11 +230,21 @@ class NetGuard:
             await writer.drain()
             writer.close()
             return
-        conn = await self._open(writer, u.hostname, u.port or 80)
-        if not conn:
-            return
-        ur, uw = conn
-        path = (u.path or "/") + (f"?{u.query}" if u.query else "")
+        up = self._upstream(u.hostname, tunnel=False)
+        if up:
+            if not await self._check(writer, u.hostname, u.port or 80):
+                return
+            ur, uw = await self._connect_upstream(up)
+            path = target  # a proxy takes the absolute URL
+            if up.auth:
+                headers = [h for h in headers if not h.lower().startswith("proxy-authorization:")]
+                headers = headers + [f"Proxy-Authorization: {up.auth}"]
+        else:
+            conn = await self._open(writer, u.hostname, u.port or 80)
+            if not conn:
+                return
+            ur, uw = conn
+            path = (u.path or "/") + (f"?{u.query}" if u.query else "")
         # One request per connection: the browser may reuse a proxy connection for another host, so force
         # Connection: close on both sides instead of piping a keep-alive stream to the wrong server.
         keep = [h for h in headers if h and not h.lower().startswith(("proxy-connection:", "connection:", "keep-alive:"))]
