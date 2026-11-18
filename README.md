@@ -141,7 +141,18 @@ A click being sent is not the same as the task succeeding. Every `act` and `fill
   them, and repeating one on the same page after a `verified`, `ambiguous` or `timed_out` outcome is
   blocked unless you pass `value="repeat"` (`submit="repeat"` for forms). Pass `key=` (a stable name such
   as `order-123`) to make the guard hold across pages, sessions and restarts: keys are kept for 24 hours
-  in `~/.lean-browser/action_keys.json` (mode 600; `LEANB_STATE_DIR` moves it).
+  in `~/.lean-browser/action_keys.json` (mode 600; `LEANB_STATE_DIR` moves it). The key is claimed before
+  the action is sent, so two agents racing with the same key can't both send it.
+
+  **Which key to use.** Name the real-world thing, not the attempt:
+  - Reuse the same key whenever you might be repeating the same intent: retrying after `ambiguous` or
+    `timed_out`, resuming after a crash or restart, or another agent picking up the same job
+    (`order-<cart id>`, `pay-invoice-881`, `reply-ticket-42`).
+  - Use a new key for a genuinely new action, even if it looks the same: a second order, the next invoice
+    (`order-<new cart id>`). Don't put a timestamp or random value in a key you want to protect, since a retry
+    would get a new one and slip through.
+  - A blocked or unverified result doesn't hold the key, so fixing the form and submitting again needs no
+    `repeat`. `value="repeat"` / `submit="repeat"` is for when you've checked and really want it twice.
 - **Safe recovery.** A re-rendered target is re-found by role, name and fingerprint, only when the
   match is unambiguous. Fills, selects and checks check the field state first, and retry once only
   if they didn't stick.

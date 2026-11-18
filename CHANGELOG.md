@@ -5,7 +5,10 @@
 - `act` and `fill_form` take an optional `key` (for example `order-123`). A submit-like action whose key
   already ended `verified`, `ambiguous` or `timed_out` is blocked, across pages, sessions and restarts, for
   24 hours, unless `value="repeat"` / `submit="repeat"`. Keys are stored in `~/.lean-browser/action_keys.json`
-  (mode 600; `LEANB_STATE_DIR` moves it). Nothing changes when no key is given.
+  (mode 600; `LEANB_STATE_DIR` moves it). Nothing changes when no key is given. The key is claimed before the
+  action is sent, so concurrent calls with one key send it once. The MCP tool schemas grow from ~1,654 to
+  ~1,722 real tokens per request (measured with `claude -p`); the schema budget test moves from 700 to 750
+  proxy tokens on purpose.
 - A link that opens a popup no longer sometimes reports the new tab while it is still `about:blank`: Lean
   waits for the popup to load its own page first. Seen once on the macOS CI runner after the v0.7.0 tag.
 

@@ -38,10 +38,13 @@ def state(base):
 def test_tool_schema_budget():
     # Proxy count (tiktoken o200k). Measured 2026-11-15 with claude -p: 663 proxy tokens = ~1,550 real
     # Claude tokens of tool definitions per request (Playwright MCP ~7,100; agent-browser ~31,600).
-    # Keep the proxy under 700 so the real cost stays around 1.6k.
+    # Budget raised from 700 to 750 on purpose (maintainer decision, 2026-11-18) for the optional `key` on act and
+    # fill_form (cross-session duplicate guard): proxy 699 -> 724. Measured with claude -p (sonnet, 3 runs, the
+    # input-token difference against no MCP server): ~1,654 -> ~1,722 real tokens, +68 per request. The headroom
+    # to 750 is for one more small, justified field, not for longer descriptions.
     n = len(tiktoken.get_encoding("o200k_base").encode(json.dumps(TOOLS)))
     assert len(TOOLS) == 7
-    assert n <= 700, f"tool schemas ≈ {n} proxy tokens (budget 700 ≈ 1.6k real Claude tokens)"
+    assert n <= 750, f"tool schemas ≈ {n} proxy tokens (budget 750 ≈ 1.75k real Claude tokens)"
 
 
 @pytest.fixture

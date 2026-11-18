@@ -68,6 +68,10 @@ make an unrelated click look verified. Pass `expect=` when it matters.
   result doesn't block, and never replaces one that does. Keys live in `~/.lean-browser/action_keys.json`
   (or `$LEANB_STATE_DIR`), mode 600, for 24 hours, so the guard survives new pages, sessions and restarts.
   Writes are atomic (temp file + `os.replace`) under a file lock. Without a key nothing changes.
+  - The key is claimed (`in_progress`) under the lock before dispatch, so of several calls racing with one key
+    across processes exactly one is sent; the others are `blocked` ("in use by another call"). A claim left by
+    a crashed process stops blocking after 10 minutes.
+  - An error after the claim releases the key if nothing was sent, and records `ambiguous` otherwise.
 
 ## Network boundary
 
@@ -87,7 +91,7 @@ Limit: if `HTTP(S)_PROXY` is set in the environment, the guard proxy is off and 
 |---|---|---|
 | Verification honesty: 21 action cases + 6 `expect=` cases × 2 engines, false-verified must be 0 | `session.py` `_signals`, `_status`, `_after` | `tests/test_verification.py`, `scripts/verification_matrix.py` (repeated runs; weekly `reliability.yml`) |
 | Outcomes on real flows: rejected login, server rejection, slow submit, `expect=` | `session.py` | `tests/test_reliability.py` |
-| Duplicate guard, action keys, retry-safety classes, dry run | `session.py` `act`, `fill_form`, `retry_safety`; `action_keys.py` | `tests/test_reliability.py` |
+| Duplicate guard, action keys (across sessions, different keys, no key, concurrent claims, errors after claim), retry-safety classes, dry run | `session.py` `act`, `fill_form`, `retry_safety`; `action_keys.py` | `tests/test_reliability.py` |
 | Recovery after re-render, reordered lists | `session.py` `_resolve_or_recover`, `_perform_guarded` | `tests/test_reliability.py`, `tests/test_session.py` |
 | Private network: URL check, both engines, redirect hops | `tools.py`, `engine.py` `_route`, `netguard.py` | `tests/test_engine.py`, `tests/test_tools.py` |
 | Uploads limited to allowed folders | `session.py` `_perform` (resolved path) | `tests/test_session.py` |

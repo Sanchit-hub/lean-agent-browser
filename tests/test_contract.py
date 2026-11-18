@@ -129,6 +129,44 @@ async def test_two_servers_do_not_share_state(base):  # noqa: F811
         assert "Welcome back, demo" in out_a and "Welcome back" not in out_b, (out_a[:200], out_b[:200])
 
 
+def test_key_is_optional_for_existing_clients():
+    """Clients written before `key` existed keep working: it is optional everywhere."""
+    tools = {t["name"]: t for t in json.loads(CONTRACT.read_text())}
+    for name in ("act", "fill_form"):
+        schema = tools[name]["input_schema"]
+        assert "key" in schema["properties"] and "key" not in schema.get("required", [])
+
+
+async def test_one_key_across_two_servers_sends_once(base, tmp_path):  # noqa: F811
+    """Two agents (two `leanb mcp` processes) submit the same order at the same moment with the same key: it is
+    sent exactly once, and the other call is blocked. Without a key (old clients) both calls still work."""
+    import urllib.request
+    from mcp import ClientSession
+    from mcp.client.stdio import StdioServerParameters, stdio_client
+    from tests.test_reliability import subs
+    urllib.request.urlopen(base + "/api/reset").read()
+    env = {**os.environ, "LEANB_STATE_DIR": str(tmp_path / "state")}
+    params = StdioServerParameters(command=LEANB, args=["--allow-private-network", "mcp"], env=env)
+    async with stdio_client(params) as (r1, w1), ClientSession(r1, w1) as a, \
+            stdio_client(params) as (r2, w2), ClientSession(r2, w2) as b:
+        await asyncio.gather(a.initialize(), b.initialize())
+        pages = await asyncio.gather(a.call_tool("open", {"url": base + "/order.html"}),
+                                     b.call_tool("open", {"url": base + "/order.html"}))
+        import re
+        ids = [re.search(r'(\d+): button "Place order"', p.content[0].text).group(1) for p in pages]
+        res = await asyncio.gather(*(c.call_tool("act", {"action": "click", "id": int(i), "key": "order-77"})
+                                     for c, i in zip((a, b), ids)))
+        texts = [r.content[0].text for r in res]
+        assert sum("status: verified" in t for t in texts) == 1, texts
+        assert sum("duplicate: key" in t for t in texts) == 1, texts
+        assert len(subs(base, "order")) == 1
+        # an old client with no key: unchanged behaviour
+        page = await b.call_tool("open", {"url": base + "/order.html"})
+        i = re.search(r'(\d+): button "Place order"', page.content[0].text).group(1)
+        assert "status: verified" in (await b.call_tool("act", {"action": "click", "id": int(i)})).content[0].text
+        assert len(subs(base, "order")) == 2
+
+
 async def test_concurrent_calls_on_one_server_are_serialized(base):  # noqa: F811
     from mcp import ClientSession
     from mcp.client.stdio import StdioServerParameters, stdio_client

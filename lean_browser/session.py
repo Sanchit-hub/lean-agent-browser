@@ -755,15 +755,39 @@ class Session:
         ts.nav_status = None
         rec = base_outcome["recovery"]
         url_before = ts.page.url
-        uncertain, id = await self._perform_guarded(ts, action, id, value if action != "click" else None, entry, safety, rec)
-        exp = {"kind": "action", "action": action, "id": id, "value": value, "entry": entry, "risky": risky,
-               "safety": safety, "expect": expect, "uncertain": uncertain, "base": base_outcome}
-        out = await self._after(ts, before, tabs_before, note, exp)
+        if key:
+            self._claim_key(key, url_before, v == "repeat", base_outcome, 'call act with value="repeat"')
+        try:
+            uncertain, id = await self._perform_guarded(ts, action, id, value if action != "click" else None, entry, safety, rec)
+            exp = {"kind": "action", "action": action, "id": id, "value": value, "entry": entry, "risky": risky,
+                   "safety": safety, "expect": expect, "uncertain": uncertain, "base": base_outcome}
+            out = await self._after(ts, before, tabs_before, note, exp)
+        except BaseException:
+            if key:
+                self._key_after_error(key, url_before)
+            raise
         if dup and self.last_outcome:
             self._unsafe_log[dup] = (time.time(), self.last_outcome["status"])
-        if key and self.last_outcome:
-            self.action_keys.record(key, self.last_outcome["status"], url_before)
+        if key:
+            self.action_keys.record(key, (self.last_outcome or {}).get("status") or "ambiguous", url_before)
         return out
+
+    def _claim_key(self, key: str, url: str, repeat: bool, base: dict, how: str) -> None:
+        held = self.action_keys.claim(key, url, repeat)
+        if held is not None:
+            running = held.get("status") == "in_progress"
+            why = (f'key "{key}" is in use by another call that started {int(time.time() - held["time"])}s ago'
+                   if running else f"key {_key_note(key, held)}")
+            self.last_outcome = {**base, "executed": False, "status": "blocked", "evidence": [f"duplicate of {why}"]}
+            raise ActionError(f"duplicate: {why}. Check the page first; to really do it again {how}")
+
+    def _key_after_error(self, key: str, url: str) -> None:
+        """An error after the claim: release the key if nothing was sent, otherwise remember it as ambiguous."""
+        o = self.last_outcome or {}
+        if o.get("executed") is False:
+            self.action_keys.release(key)
+        else:
+            self.action_keys.record(key, o.get("status") or "ambiguous", url)
 
     async def _page_lines(self, ts: TabState) -> set[str]:
         """Short visible text lines of the page (for spotting a new "Processing…" that snapshots leave out)."""
@@ -1274,6 +1298,18 @@ class Session:
             submit = True
         tabs_before = len(self.tabs)
         url_before = ts.page.url
+        if key:
+            self._claim_key(key, url_before, repeat, base, 'pass submit="repeat"')
+        try:
+            return await self._fill_form_dispatch(ts, fields, submit, expect, key, dup, idx, before, tabs_before,
+                                                  url_before, base, form_key)
+        except BaseException:
+            if key:
+                self._key_after_error(key, url_before)
+            raise
+
+    async def _fill_form_dispatch(self, ts, fields, submit, expect, key, dup, idx, before, tabs_before, url_before,
+                                  base, form_key):
         await self._sync_dialog_policy(ts)
         errors = []
         for raw_id, value in fields.items():
@@ -1342,8 +1378,11 @@ class Session:
         out = await self._after(ts, before, tabs_before, prefix, exp)
         if dup and exp["submitted"] and self.last_outcome:
             self._unsafe_log[dup] = (time.time(), self.last_outcome["status"])
-        if key and exp["submitted"] and self.last_outcome:
-            self.action_keys.record(key, self.last_outcome["status"], url_before)
+        if key:
+            if exp["submitted"]:
+                self.action_keys.record(key, (self.last_outcome or {}).get("status") or "ambiguous", url_before)
+            else:
+                self.action_keys.release(key)  # the form never got submitted
         return out
 
     async def extract(self, kind: str = "auto", within: int | None = None, fields: list[str] | None = None,

@@ -225,6 +225,81 @@ def test_action_key_store_expiry_and_strongest_result(tmp_path):
     assert ks.get("a") is None
 
 
+async def test_action_key_different_keys_and_omitted_key(s, keystore):
+    out = await s.open(s.base + "/order.html")
+    assert (await s.act("click", idof(out, 'button "Place order"'), key="order-a")).startswith("status: verified")
+    bm2, s2 = await _session(s.base, s.engine, keep=True)
+    try:
+        out = await s2.open(s.base + "/order.html")
+        res = await s2.act("click", idof(out, 'button "Place order"'), key="order-b")  # a different key is a new order
+        assert res.startswith("status: verified"), res
+        assert set(json.loads(keystore.read_text())) == {"order-a", "order-b"}
+    finally:
+        await bm2.close()
+    assert len(subs(s.base, "order")) == 2
+
+
+async def test_action_key_claim_released_or_kept_after_an_error(s, keystore, monkeypatch):
+    """After the key is claimed, an error that sent nothing releases it; an error after dispatch keeps it as
+    ambiguous, so a blind retry with the same key is blocked."""
+    out = await s.open(s.base + "/order.html")
+    place = idof(out, 'button "Place order"')
+
+    async def refused(*a, **k):
+        s.last_outcome = {"executed": False, "status": "blocked"}
+        raise ActionError("target went away before dispatch")
+    monkeypatch.setattr(s, "_perform_guarded", refused)
+    with pytest.raises(ActionError, match="went away"):
+        await s.act("click", place, key="order-x")
+    assert "order-x" not in json.loads(keystore.read_text())
+
+    async def broke(*a, **k):
+        s.last_outcome = None
+        raise RuntimeError("engine crashed mid-click")
+    monkeypatch.setattr(s, "_perform_guarded", broke)
+    with pytest.raises(RuntimeError):
+        await s.act("click", place, key="order-x")
+    assert json.loads(keystore.read_text())["order-x"]["status"] == "ambiguous"
+    monkeypatch.undo()
+    with pytest.raises(ActionError, match='duplicate: key "order-x"'):
+        await s.act("click", place, key="order-x")
+    assert len(subs(s.base, "order")) == 0
+
+
+def _claim_worker(args):
+    directory, key = args
+    from lean_browser.action_keys import ActionKeys
+    return ActionKeys(directory).claim(key, "https://shop.example/checkout") is None
+
+
+def test_action_key_concurrent_claims_exactly_one_wins(tmp_path):
+    """Eight processes race to claim one key: exactly one may dispatch, the rest see it in use."""
+    import multiprocessing as mp
+    from lean_browser.action_keys import ActionKeys
+    with mp.get_context("spawn").Pool(8) as pool:
+        won = pool.map(_claim_worker, [(str(tmp_path), "pay-42")] * 8)
+    assert won.count(True) == 1, won
+    ks = ActionKeys(tmp_path)
+    assert ks.get("pay-42")["status"] == "in_progress"
+    ks.record("pay-42", "verified", "https://shop.example/checkout")
+    assert ks.claim("pay-42", "https://shop.example/checkout")["status"] == "verified"
+    assert ks.claim("pay-42", "https://shop.example/checkout", repeat=True) is None  # repeat reserves anyway
+    ks.release("pay-42")
+    assert ks.get("pay-42")["status"] == "verified"  # releasing a repeat claim restores the earlier result
+
+
+def test_action_key_stale_claim_expires(tmp_path):
+    import time
+    from lean_browser.action_keys import IN_PROGRESS_TTL_S, ActionKeys
+    ks = ActionKeys(tmp_path)
+    assert ks.claim("k", "u") is None
+    assert ks.claim("k", "u")["status"] == "in_progress"
+    data = json.loads(ks.path.read_text())
+    data["k"]["time"] = time.time() - IN_PROGRESS_TTL_S - 1  # left behind by a crashed process
+    ks.path.write_text(json.dumps(data))
+    assert ks.claim("k", "u") is None
+
+
 def test_retry_safety_classes():
     sub = {"role": "button", "name": "Create account", "fp": {"form": "f", "sub": 1}}
     assert retry_safety("scroll", None) == "safe"

@@ -1,7 +1,7 @@
 """The 7 agent-facing tools and the LeanBrowser facade behind them.
 
 Tool schemas are deliberately terse: every tool definition is sent with every agent request, so
-schema size is a per-step token cost (budget: <= 760 proxy tokens for all 7, enforced by a test).
+schema size is a per-step token cost (budget: <= 750 proxy tokens for all 7, enforced by tests/test_tools.py).
 Longer documentation lives in README.md, not here.
 
     async with LeanBrowser() as lb:
