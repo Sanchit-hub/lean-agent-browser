@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.8.0 (2026-11-19): red team, network guard behind proxies, cross-session duplicate guard
+
+A red-team pass found 15 realistic pages that got a false `verified`; all are fixed and stay in the suite. The
+verification matrix is 0 false verified and 0 false unverified in 1,400 runs (70 cases × 2 engines × 10), and
+actions are faster than before the fixes (p50 1.10 s, p95 4.15 s).
 
 - Faster actions with the same evidence: the new checks no longer wait a fixed time. Lean waits only for short
   timers the page itself set in response to the action (and for a late popup only after clicking a link or form
