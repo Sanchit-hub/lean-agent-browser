@@ -23,7 +23,7 @@ Lean is not on PyPI yet. Until it is, install a tagged release straight from Git
 final `pipx install lean-agent-browser`):
 
 ```bash
-pipx install "git+https://github.com/Sanchit-hub/lean-agent-browser@v0.6.0"
+pipx install "git+https://github.com/Sanchit-hub/lean-agent-browser@v0.7.0"
 ```
 
 ```bash

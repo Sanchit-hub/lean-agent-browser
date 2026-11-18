@@ -77,7 +77,7 @@ verified against evidence, safe recovery. Token efficiency stays an advantage; r
   `uninstall` / `--version`. Claude Code is changed only through `claude mcp add-json/get/remove`, user scope,
   and only after a yes (`--yes` for scripts). Tested against the real CLI under a throwaway HOME.
 - The repo is public (2026-11-18). Not on PyPI: the README installs a tag with
-  `pipx install "git+https://github.com/Sanchit-hub/lean-agent-browser@v0.6.0"`. `release.yml` publishes to PyPI
+  `pipx install "git+https://github.com/Sanchit-hub/lean-agent-browser@v0.7.0"`. `release.yml` publishes to PyPI
   only when the user publishes a GitHub Release, after setting up trusted publishing.
 - Private vulnerability reporting enabled (2026-11-18). Still the user's to do: PyPI trusted publisher and the
   three-person first-time user test (`docs/RELEASING.md`).

@@ -19,7 +19,7 @@ and open a new terminal.
 
 **`requires a different Python` / `Python 3.12+ required`**
 pipx used an older Python (macOS's built-in `python3` is 3.9). Point it at a newer one:
-`pipx install --python python3.12 "git+https://github.com/Sanchit-hub/lean-agent-browser@v0.6.0"`
+`pipx install --python python3.12 "git+https://github.com/Sanchit-hub/lean-agent-browser@v0.7.0"`
 (`brew install python@3.12` or `sudo apt install python3.12` first if you don't have it).
 
 **`leanb: command not found` after installing**
