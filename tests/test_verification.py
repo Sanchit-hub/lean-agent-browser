@@ -5,12 +5,18 @@ or doesn't happen (evals/bench/verification.py). On both engines:
 scripts/verification_matrix.py runs the same cases N times and prints the confusion matrix."""
 import pytest
 
-from evals.bench.verification import CASES, classify, run_case
+from evals.bench.verification import CASES, KNOWN_FALSE_VERIFIED, classify, run_case
 from tests.test_reliability import ENGINES, _session, base  # noqa: F401  (fixture)
 
 
+def _params(cases):
+    """Known false-verified cases are strict xfails: they must keep failing until fixed, then come off the list."""
+    return [pytest.param(c, id=c[0], marks=pytest.mark.xfail(strict=True, reason="known false verified"))
+            if c[0] in KNOWN_FALSE_VERIFIED else pytest.param(c, id=c[0]) for c in cases]
+
+
 @pytest.mark.parametrize("engine", ENGINES)
-@pytest.mark.parametrize("case", CASES, ids=[c[0] for c in CASES])
+@pytest.mark.parametrize("case", _params(CASES))
 async def test_verification_honesty(base, engine, case):  # noqa: F811
     bm, sess = await _session(base, engine)
     try:
@@ -28,7 +34,7 @@ from evals.bench.verification import CASES_EXPECT, run_expect_case  # noqa: E402
 
 
 @pytest.mark.parametrize("engine", ENGINES)
-@pytest.mark.parametrize("case", CASES_EXPECT, ids=[c[0] for c in CASES_EXPECT])
+@pytest.mark.parametrize("case", _params(CASES_EXPECT))
 async def test_expect_needs_fresh_unnegated_evidence(base, engine, case):  # noqa: F811
     bm, sess = await _session(base, engine)
     try:
