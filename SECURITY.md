@@ -48,9 +48,11 @@ impact. Expect a first reply within a week.
 
 ## Known limits
 
-- The sandbox only applies to Obscura. Chromium is Playwright's bundled build with a throwaway profile, and
-  Playwright starts it with Chromium's own sandbox turned off. Pages that fall back to Chromium are not
-  OS-isolated by Lean.
+- Lean's sandbox (no home-folder reads, writes only to a temp dir) only applies to Obscura. Chromium is
+  Playwright's bundled build with a throwaway profile. Lean launches it with Chromium's own OS sandbox
+  (renderer isolation) when the host allows it: on macOS it is on. Where it can't start (Linux hosts or
+  containers without unprivileged user namespaces), Lean runs Chromium without it, records a note, and
+  `leanb doctor` shows `WARN os sandbox`. `LEANB_CHROMIUM_SANDBOX=0` forces it off.
 - If `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` is set, the guard proxy is off (it doesn't chain to your
   proxy). URLs and requests are still checked, but redirect hops and DNS rebinding are not.
 - On Linux, bubblewrap can't restrict which ports Obscura connects out to (macOS can, for `localhost_only`).

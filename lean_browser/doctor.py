@@ -128,12 +128,15 @@ async def check_obscura() -> Check:
     return Check("obscura", PASS, f"Obscura {OBSCURA_VERSION} at {b}: hashes match the pin, starts sandboxed on 127.0.0.1")
 
 
-async def check_engine(prefer: str) -> Check:
+async def check_engine(prefer: str, seen: dict | None = None) -> Check:
+    """Load a test page on one engine. `seen` receives Chromium's OS-sandbox state for `check_chromium_sandbox`."""
     from lean_browser.engine import IS_MAC, BrowserManager
     try:
         async with BrowserManager(prefer=prefer) as bm:
             tab = await bm.open(TEST_PAGE)
             title = await tab.page.title()
+            if seen is not None and tab.engine == "chromium":
+                seen.update(sandboxed=bm.chromium_sandboxed, why=bm.chromium_sandbox_note)
             if prefer == "obscura" and tab.engine != "obscura":
                 return Check("obscura page", FAIL, f"fell back to {tab.engine}: {tab.reason}")
     except Exception as e:  # noqa: BLE001 - report any launch failure
@@ -143,6 +146,19 @@ async def check_engine(prefer: str) -> Check:
             fix += f"; if Chromium's system libraries are missing: sudo {sys.executable} -m playwright install-deps chromium"
         return Check(f"{prefer} page", FAIL, f"{type(e).__name__}: {msg}", fix)
     return Check(f"{prefer} page", PASS, f"loaded a test page (title {title!r})")
+
+
+def check_chromium_sandbox(seen: dict) -> Check:
+    """PASS when Chromium runs inside its own OS sandbox, WARN when it only runs without it."""
+    if seen.get("sandboxed") is None:
+        return Check("os sandbox", FAIL, "Chromium did not start, so its OS sandbox could not be checked",
+                     "Fix the chromium page check first.")
+    if seen["sandboxed"]:
+        return Check("os sandbox", PASS, "Chromium runs inside its own OS sandbox")
+    fix = "Unset LEANB_CHROMIUM_SANDBOX." if "LEANB_CHROMIUM_SANDBOX" in seen.get("why", "") else (
+        "Chromium needs unprivileged user namespaces for its sandbox (on Ubuntu 24.04: "
+        "sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0); containers usually don't allow them.")
+    return Check("os sandbox", WARN, f"Chromium runs without its OS sandbox: {seen.get('why') or 'unknown reason'}", fix)
 
 
 async def check_mcp(timeout: float = 90) -> Check:
@@ -194,7 +210,10 @@ async def run_checks(config: str | None = None, claude: bool = True, mcp: bool =
     checks.append(await check_obscura())
     if find_obscura() and sandbox_tool() and checks[-1].status == PASS:
         checks.append(await check_engine("obscura"))
-    checks.append(await check_engine("chromium"))
+    seen: dict = {}
+    checks.append(await check_engine("chromium", seen))
+    if checks[-1].status == PASS:
+        checks.append(check_chromium_sandbox(seen))
     if mcp:
         checks.append(await check_mcp())
     if claude:
@@ -228,7 +247,8 @@ def to_json(checks: list[Check]) -> str:
         "machine": platform.machine(), "python": platform.python_version(), "obscura_pin": OBSCURA_VERSION,
         "ok": ok, "summary": text,
         "checks": [{k: _home(v) for k, v in asdict(c).items()} for c in checks],
-        "env": {k: _home(os.environ[k]) for k in ("PLAYWRIGHT_BROWSERS_PATH", "LEANB_OBSCURA", "LEANB_OBSCURA_VERSION") if k in os.environ},
+        "env": {k: _home(os.environ[k]) for k in ("PLAYWRIGHT_BROWSERS_PATH", "LEANB_OBSCURA", "LEANB_OBSCURA_VERSION",
+                                                          "LEANB_CHROMIUM_SANDBOX") if k in os.environ},
     }, indent=2)
 
 

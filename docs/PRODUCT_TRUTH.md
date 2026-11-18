@@ -28,7 +28,7 @@ Status is one of: **verified** (a test or recorded run proves it), **partial** (
 | Install, setup, doctor, Claude Code registration, upgrade, uninstall | `onboarding.py`, `doctor.py`, `claude_code.py`, `installer.py` | `tests/test_onboarding.py`, `scripts/smoke_clean_install.sh` in CI on 3 platforms | verified by us; **unverified by outside users** | medium |
 | Supported platforms: macOS arm64, Ubuntu 24.04 x86_64 and arm64 | CI matrix | `ci.yml` runs | verified | low |
 | Fewer tokens than Playwright MCP | `evals/` | 100 fixture tasks × 3 runs (`docs/benchmark.md`) | partial: our own fixture tasks only, not real sites | medium |
-| Chromium is OS-sandboxed | — | Playwright starts it with its sandbox off | not supported (documented) | medium |
+| Chromium runs inside its own OS sandbox where the host allows it | `engine.py` `_chromium_context` (sandboxed launch, fallback with a note), `doctor.py` `check_chromium_sandbox` | `test_chromium_tries_its_os_sandbox_and_reports_it`, `test_chromium_falls_back_without_os_sandbox` | verified on macOS; partial on Linux: off where user namespaces are restricted (doctor WARN) | medium |
 | Pages in other languages | `ERROR_RE` has common error words in several languages | `nav-error-german` case | partial: success words English-only, so these usually end `unverified` | medium |
 | Exactly-once execution on arbitrary websites | — | — | not supported, not claimed | — |
 
@@ -67,7 +67,8 @@ Status is one of: **verified** (a test or recorded run proves it), **partial** (
   every launch, and Obscura runs only sandboxed (`sandbox-exec` on macOS, bubblewrap on Linux).
   0.2.6 is kept for rollback on macOS only.
 - **Chromium**: Playwright 1.64.1's bundled build, installed into `~/.lean-browser/pw-browsers`, with a
-  throwaway profile. Playwright starts it with Chromium's own sandbox off. Without Obscura (no bubblewrap,
+  throwaway profile. Lean starts it with Chromium's own OS sandbox where the host allows it (macOS: on;
+  Linux: needs unprivileged user namespaces, otherwise off with a doctor WARN). Without Obscura (no bubblewrap,
   or an unsupported platform) Chromium serves every page.
 - Disk use after setup: about 135 MB for Obscura and 570 MB for Chromium (measured on macOS).
 
@@ -118,5 +119,5 @@ only the older 18-task, 1-run result. Every task was written by the project auth
 - Network containment (v0.6.0): connect-time guard on both engines with a redirect regression test. DNS
   rebinding and WebSockets go through the same guard but have no dedicated test. The guard is off when
   `HTTP(S)_PROXY` is set.
-- Chromium runs without its OS sandbox.
+- Chromium runs without its OS sandbox on hosts that restrict unprivileged user namespaces (doctor WARN).
 - Upgrade from v0.5.0 is tested in CI (pipx); older versions were never tagged.

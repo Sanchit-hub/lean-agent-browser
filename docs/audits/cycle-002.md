@@ -36,8 +36,8 @@ Checked and found sound, now with tests:
 | Network pivot (SSRF) | localhost, LAN, cloud metadata | Page author, redirector | Navigation, redirects, subresources, DNS rebinding | URL check, request routing, connect-time guard on both engines | `test_redirect_to_private_address_is_blocked`, `test_private_network_*` | Guard off when `HTTP(S)_PROXY` is set; no dedicated rebinding test |
 | Local file read | Files on disk | Page or agent | Upload with a crafted path | Absolute paths inside `allowed_upload_dirs`, symlinks and `..` resolved | `test_upload_path_guard_*` | Files inside the allowed folder can be uploaded by design |
 | Secrets in traces | Passwords, tokens, cards | Anyone who gets a trace | `--trace` files, exports | Redaction of sensitive fields and URL parameters; page text opt-in; `600` export files | `tests/test_trace.py` | A secret typed into an unrecognised plain field |
-| Browser profile | The user's own Chrome data | Page author | Shared profile | Throwaway profiles only; Obscura sandboxed away from home | engine tests | Chromium runs without its OS sandbox |
-| Fallback weakening | All of the above | Page that forces fallback | Capability routing to Chromium | Same network rules and guard, same upload rules, same session policy on both engines | redirect test on both engines | Chromium is not OS-isolated |
+| Browser profile | The user's own Chrome data | Page author | Shared profile | Throwaway profiles only; Obscura sandboxed away from home | engine tests | Chromium runs without its OS sandbox where the host can't provide one (doctor WARN) |
+| Fallback weakening | All of the above | Page that forces fallback | Capability routing to Chromium | Same network rules and guard, same upload rules, same session policy on both engines; Chromium's own OS sandbox where available | redirect test on both engines | Chromium is not isolated from the home folder like Obscura |
 | Claude Code config | User's other MCP servers | Bug in setup | `leanb setup` / `uninstall` | Only `claude mcp add-json/get/remove` on the `lean-browser` entry, after a yes | `tests/test_onboarding.py` (fake and real CLI) | — |
 | Tampered binaries | The machine | Supply chain | Obscura download | Pinned archive and binary SHA256, re-checked on every launch; dependency pins in `pyproject.toml` | `test_rejects_bad_checksum` | Playwright's Chromium download is trusted as Playwright ships it |
 | Cross-session leakage | Another agent's pages and cookies | Another agent on the machine | Shared browser | One browser per `leanb mcp` process | `test_two_servers_do_not_share_state` | — |
@@ -47,7 +47,7 @@ Checked and found sound, now with tests:
 
 | Property | Obscura | Chromium |
 |---|---|---|
-| OS sandbox | yes (`sandbox-exec` / bubblewrap) | no (Playwright default) |
+| OS sandbox | yes (`sandbox-exec` / bubblewrap) | Chromium's own sandbox where the host allows it (on for macOS); otherwise off with a note and a doctor WARN; `LEANB_CHROMIUM_SANDBOX=0` forces it off |
 | Private-network URL check | yes | yes |
 | Per-request check | Obscura's own guard | request routing |
 | Redirect hops and DNS rebinding | connect-time guard | connect-time guard |
@@ -67,6 +67,5 @@ Checked and found sound, now with tests:
 | P2 | Guard proxy chains to the user's `HTTP(S)_PROXY` | Redirect protection is lost behind corporate proxies | Add upstream CONNECT support with the same IP check |
 | P2 | Dedicated DNS-rebinding test | The guard covers it, but there is no test | Resolver fixture that changes its answer between lookups |
 | P2 | Success words in more languages | Non-English success ends `unverified` | Add words with fixtures per language |
-| P2 | Chromium sandbox on where available | Isolation parity | Try `chromium_sandbox=True` with a fallback and a doctor line |
 | P3 | Caller-supplied action key for the duplicate guard | Guard across sessions and restarts | Design first; needs a schema change |
 | P3 | Real-site canary suite (read-only) | Fixture results don't prove real sites | 10 public read-only pages, weekly |
