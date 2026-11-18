@@ -10,7 +10,7 @@ Status is one of: **verified** (a test or recorded run proves it), **partial** (
 | Claim | Implementation | Evidence | Status | Risk |
 |---|---|---|---|---|
 | Compact snapshots with stable ids, collapsed groups, find/expand | `snapshot.js`, `snapshot.py` | `tests/test_snapshot.py` (both engines) | verified | low |
-| `verified` means the page shows evidence the outcome happened | `session.py` `_signals`, `_status`, `_after` | `tests/test_verification.py`; `scripts/verification_matrix.py` 1,380 runs on `ffa68a0`: 0 new false verified, 0 false unverified; the one known gap (`rt-fill-reverted-late`) since fixed | verified on the suite (incl. 23 red-team cases); success/error words in English plus ten common languages | medium |
+| `verified` means the page shows evidence the outcome happened | `session.py` `_signals`, `_status`, `_after` | `tests/test_verification.py`; `scripts/verification_matrix.py` 1,400 runs on `b539371`: 0 false verified, 0 false unverified | verified on the suite (incl. 23 red-team cases); success/error words in English plus ten common languages | medium |
 | `expect=` postconditions need new, non-negated evidence | `session.py` `_expect_pre`, `_check_expect`, `EXPECT_COUNT_JS` | `test_expect_needs_fresh_unnegated_evidence` (5 cases × 2 engines) | verified | low |
 | Form validation is checked before a submit (Obscura doesn't validate) | `session.py` `FORM_INVALID_JS`, `_form_invalid` | `html5-required` case | verified | low |
 | Submits, payments and deletes are never retried automatically | `session.py` `_perform_guarded`, `retry_safety` | `test_slow_submit_times_out_honestly_and_is_not_repeated`, `test_retry_safety_classes` | verified | low |
@@ -81,6 +81,7 @@ Status is one of: **verified** (a test or recorded run proves it), **partial** (
 | Clean-install test, macOS arm64 (local) | passed: wheel contents, venv path with a space, `setup --yes`, doctor 9/9 PASS, `doctor --json`, MCP round trip |
 | pipx install of the checkout (local, PIPX_HOME with a space) | `leanb --version` 0.5.0, doctor all PASS, install kind `pipx` |
 | Real Claude Code CLI 2.1.322, throwaway HOME | register, no duplicate, update a stale entry, unrelated server kept, uninstall removes only `lean-browser` |
+| Verification suite, 70 cases (incl. 24 red-team) × 2 engines × 10 runs (`b539371`) | **380 true verified, 1,020 correctly unverified: 0 false verified, 0 false unverified, 0 setup errors, known-gap list empty**; p50 1.89 s (was 1.14 s: the new evidence checks), p95 6.16 s |
 | Verification suite, 69 cases (incl. 23 red-team) × 2 engines × 10 runs (`ffa68a0`) | 360 true verified, 1,000 correctly unverified, 0 false unverified, 0 setup errors; 20 false verified, all from the one documented known gap `rt-fill-reverted-late`; p50 1.14 s, p95 6.18 s |
 | Verification suite, 27 cases × 2 engines × 10 runs (v0.7.0) | 0 false verified, 0 false unverified in 540 runs |
 | Full suite, macOS arm64 (local), v0.7.0 | 464 passed, 3 skipped |
