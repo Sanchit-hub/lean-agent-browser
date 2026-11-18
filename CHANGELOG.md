@@ -9,6 +9,10 @@
   action is sent, so concurrent calls with one key send it once. The MCP tool schemas grow from ~1,654 to
   ~1,722 real tokens per request (measured with `claude -p`); the schema budget test moves from 700 to 750
   proxy tokens on purpose.
+- Dedicated WebSocket tests for the private-network guard: from a public page, `ws://` to 127.0.0.1, a name
+  that resolves privately and 169.254.169.254 never reaches the server and is logged as blocked; a WebSocket
+  to the page's own origin still echoes through the guard. Found: Obscura 0.2.6's `WebSocket` is a stub
+  (fake `open`, no connection), so WebSockets don't work on Obscura (xfail, strict).
 - The `expect-url-already` verification case (v0.7.0 finding 3) never actually ran: its page was not found and
   that counted as "not verified". Fixed; it now runs and is correctly `unverified` on both engines. A case that
   can't find its page or target is now a setup error that fails the matrix instead of hiding.

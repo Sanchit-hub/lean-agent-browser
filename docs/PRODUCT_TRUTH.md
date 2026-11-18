@@ -119,6 +119,9 @@ only the older 18-task, 1-run result. Every task was written by the project auth
 - One MCP client documented and tested: Claude Code.
 - Network containment: connect-time guard on both engines, with redirect and DNS-rebinding tests. Behind
   the user's `HTTP(S)_PROXY` it chains to that proxy (rebinding is then the proxy's own resolution); a
-  `socks://` proxy turns it off. WebSockets go through the same guard but have no dedicated test.
+  `socks://` proxy turns it off. WebSockets are tested on Chromium: to 127.0.0.1, a privately resolving
+  name and 169.254.169.254 they are refused, to the page's own public origin they work. On Obscura 0.2.6
+  `WebSocket` is a stub that fakes `open` and never connects, so nothing leaks, but WebSockets don't work
+  there and such pages are not routed to Chromium.
 - Chromium runs without its OS sandbox on hosts that restrict unprivileged user namespaces (doctor WARN).
 - Upgrade from v0.5.0 is tested in CI (pipx); older versions were never tagged.
