@@ -90,6 +90,24 @@ Limit: if `HTTP(S)_PROXY` is set in the environment, the guard proxy is off and 
 | Engine crash mid-session | `tools.py`, `engine.py` | `test_engine_crash_mid_session_is_explained_and_recoverable` |
 | Agent-level outcomes (server-checked, 100 tasks) | — | `evals/` (needs `claude -p`) |
 
+## Real-site canary
+
+Fixture results don't prove real sites work. `scripts/canary.py` opens about 10 stable public pages
+(example.com, Wikipedia, python.org, the Python docs, MDN, Hacker News, a GitHub repo, gnu.org, httpbin,
+IANA) through the Python API with default settings and the private network blocked. On each it checks the
+first snapshot for a stable string, then runs one read-only action: `snapshot(find=...)`, `wait_for`, or a
+click on a same-site link that must change the page. It never types, submits or logs in. Each row records
+the engine that served the page, the fallback reason, seconds and pass/fail; `--json` writes them.
+
+Real sites change and flake, so it exits 1 only when more than `--max-failures` (default 2) sites fail on
+one engine. It runs weekly and by hand (`canary.yml`, macOS and Linux x86_64), never on push or PR, and
+uploads the JSON. A failure means look, not necessarily a bug: check whether the site changed or was down.
+
+```bash
+.venv/bin/python scripts/canary.py --json canary.json
+.venv/bin/python scripts/canary.py --engines obscura --sites wikipedia,github
+```
+
 ## Known gaps
 
 - English-only success and error words. A page in another language usually ends `unverified`, which is

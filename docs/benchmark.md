@@ -131,6 +131,9 @@ Only a full run (all fixture tasks, 3+ runs) replaces `evals/report.md`.
   with about a quarter of the tokens and fewer turns.
 - **It doesn't show** that Lean works on every website. We wrote every task ourselves, on a local fixture site
   built to cover common patterns. Real sites have bot checks, logins and layouts we didn't model.
+- A read-only real-site canary (`scripts/canary.py`, weekly in `canary.yml`; see `docs/RELIABILITY.md`)
+  checks that about 10 public pages still open and respond on both engines. It is a smoke check, not an
+  agent benchmark, and no tokens are counted.
 - Both tools reached 100%, so this suite no longer separates them on success. Harder tasks, tasks written by
   other people, and real-site workflows are the next step (see `ROADMAP.md`).
 - agent-browser has only the older 18-task, 1-run result. A valid 100-task run needs a sequential run and

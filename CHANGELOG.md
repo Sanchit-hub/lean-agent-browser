@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Real-site canary: `scripts/canary.py` opens about 10 stable public pages read-only on both engines (one
+  stable string plus one harmless action each) and records engine, fallback, time and pass/fail. Weekly and
+  by hand in `canary.yml` on macOS and Linux; fails only when more than 2 sites fail on one engine.
 - A link that opens a popup no longer sometimes reports the new tab while it is still `about:blank`: Lean
   waits for the popup to load its own page first. Seen once on the macOS CI runner after the v0.7.0 tag.
 

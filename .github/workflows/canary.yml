@@ -1,0 +1,54 @@
+name: Canary
+
+# Read-only real-site canary (scripts/canary.py): about 10 stable public pages on both engines, default
+# settings, private network blocked. Opens pages, checks a stable string, runs one harmless action; never
+# submits forms or logs in. Real sites flake, so it fails only when more than --max-failures sites fail on
+# one engine. Weekly and by hand only: never on push or pull request.
+on:
+  schedule:
+    - cron: "41 4 * * 3"
+  workflow_dispatch:
+    inputs:
+      max_failures:
+        description: "Allowed failing sites per engine"
+        default: "2"
+
+permissions:
+  contents: read
+
+jobs:
+  canary:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: bubblewrap (sandbox for Obscura)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q bubblewrap
+          # Ubuntu 24.04 restricts unprivileged user namespaces through AppArmor; bubblewrap needs them.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: Cache Obscura and Chromium
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
+        with:
+          path: ~/.lean-browser
+          key: lean-browser-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('install.sh', 'pyproject.toml', 'lean_browser/engine.py') }}
+      - name: Install (pinned + checksummed Obscura, Chromium, self-check)
+        run: |
+          PYTHON=python3 ./install.sh || true   # doctor may fail before Chromium's system libraries are present
+          if [ "$RUNNER_OS" = Linux ]; then sudo .venv/bin/python -m playwright install-deps chromium; fi
+          .venv/bin/leanb doctor --no-claude
+      - name: Canary
+        run: .venv/bin/python scripts/canary.py --max-failures "${{ inputs.max_failures || '2' }}" --json canary-${{ matrix.os }}.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        if: always()
+        with:
+          name: canary-${{ matrix.os }}
+          path: canary-${{ matrix.os }}.json
