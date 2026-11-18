@@ -47,12 +47,15 @@ Errors win over every success signal above:
   with a success signal at the same time it is `unverified`, since the page says both.
 - A heading that was already there before the action ("Welcome back" on a login page that comes back) is not a
   new success message, and neither is a "Loading…"-style text ("Loading complete").
-- When a live message is the only evidence, the page is read again ~1.2 s later, so an optimistic "Saved" that
-  turns into an error is caught.
+- When a live message is the only evidence and the page set a short timer (≤ 3 s) in response to the action,
+  the page is read again after it fires, so an optimistic "Saved" that turns into an error is caught. Pages that
+  set no timer aren't slowed down.
 
 Otherwise:
 - While the page shows a new "Processing…" / "Please wait" / "Loading…", Lean waits up to 8 s for the real answer.
 - A dialog that was answered with nothing changing afterwards, or a new tab opening, is not proof for a submit.
+- A click that changed nothing waits briefly for a late popup only when the target is a link or form with a
+  `target`, or the page set a short timer.
 - Time-like texts that only tick ("Last updated 3s ago") are not new evidence.
 
 **Before a submit is dispatched**, the form's own validation (required, email, minlength, pattern) is checked.

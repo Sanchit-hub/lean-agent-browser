@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Faster actions with the same evidence: the new checks no longer wait a fixed time. Lean waits only for short
+  timers the page itself set in response to the action (and for a late popup only after clicking a link or form
+  with a `target`). Verification matrix: p50 1.89 s → 1.10 s, p95 6.16 s → 4.15 s, still 0 false verified in
+  1,400 runs; the full test suite runs in 11 min instead of 14.
 - **Red-team audit: 14 false `verified` fixed (release-blocking).** 23 new adversarial verification cases found 15
   pages where an action that failed was reported `verified` on both engines. Now: error text in plain paragraphs
   (and same-origin frames) and error routes count against success; a page that shows success and error text at

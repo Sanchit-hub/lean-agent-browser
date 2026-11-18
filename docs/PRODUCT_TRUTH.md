@@ -81,6 +81,7 @@ Status is one of: **verified** (a test or recorded run proves it), **partial** (
 | Clean-install test, macOS arm64 (local) | passed: wheel contents, venv path with a space, `setup --yes`, doctor 9/9 PASS, `doctor --json`, MCP round trip |
 | pipx install of the checkout (local, PIPX_HOME with a space) | `leanb --version` 0.5.0, doctor all PASS, install kind `pipx` |
 | Real Claude Code CLI 2.1.322, throwaway HOME | register, no duplicate, update a stale entry, unrelated server kept, uninstall removes only `lean-browser` |
+| Verification suite, 70 cases × 2 engines × 10 runs, after the timing fix | 380 true verified, 1,020 correctly unverified: 0 false verified, 0 false unverified; **p50 1.10 s, p95 4.15 s** |
 | Verification suite, 70 cases (incl. 24 red-team) × 2 engines × 10 runs (`b539371`) | **380 true verified, 1,020 correctly unverified: 0 false verified, 0 false unverified, 0 setup errors, known-gap list empty**; p50 1.89 s (was 1.14 s: the new evidence checks), p95 6.16 s |
 | Verification suite, 69 cases (incl. 23 red-team) × 2 engines × 10 runs (`ffa68a0`) | 360 true verified, 1,000 correctly unverified, 0 false unverified, 0 setup errors; 20 false verified, all from the one documented known gap `rt-fill-reverted-late`; p50 1.14 s, p95 6.18 s |
 | Verification suite, 27 cases × 2 engines × 10 runs (v0.7.0) | 0 false verified, 0 false unverified in 540 runs |

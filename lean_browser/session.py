@@ -390,6 +390,7 @@ class TabState:
     pre_lines: set | None = None        # visible text lines before a submit-like action (pending detection)
     pre_expect: dict | None = None      # expect= state before the action (stale evidence doesn't count)
     pre_plain: set | None = None        # main-content text lines before a click / press / submit (PLAIN_LINES_JS)
+    opens_tab: bool = False             # the clicked element is a link or form with a target (may open a tab)
 
     @property
     def page(self) -> Page:
@@ -807,9 +808,16 @@ class Session:
                                  "evidence": [f"duplicate of key {_key_note(key, kprior)}"]}
             raise ActionError(f"duplicate: key {_key_note(key, kprior)}. Check the page first; to really do it again "
                               'call act with value="repeat"')
+        ts.opens_tab = False
         if action == "click" or (action == "press" and str(value or "").lower() in SUBMIT_KEYS):
             el = (await ts.page.evaluate_handle(RESOLVE_JS, int(id))).as_element() if id is not None else None
             bad = await self._form_invalid(el, action == "press") if el else None
+            try:
+                ts.opens_tab = bool(el) and await el.evaluate(
+                    "e => !!e.closest('a[target]:not([target=_self]):not([target=_top]):not([target=_parent]),"
+                    " form[target]:not([target=_self]):not([target=_top]):not([target=_parent])')")
+            except Exception:  # noqa: BLE001 - unknown: assume it may open a tab
+                ts.opens_tab = True
             if bad:
                 self.last_outcome = {**base_outcome, "executed": False, "status": "blocked",
                                      "evidence": ["form validation: " + "; ".join(bad[:4])]}
@@ -829,7 +837,7 @@ class Session:
         if key:
             self._claim_key(key, url_before, v == "repeat", base_outcome, 'call act with value="repeat"')
         try:
-            if action in FIELD_ACTIONS:
+            if action in FIELD_ACTIONS or action in ("click", "press"):
                 await self._eval_quiet(ts, ARM_TIMERS_JS)
             uncertain, id = await self._perform_guarded(ts, action, id, value if action != "click" else None, entry, safety, rec)
             exp = {"kind": "action", "action": action, "id": id, "value": value, "entry": entry, "risky": risky,
@@ -1103,15 +1111,18 @@ class Session:
         await self._drain_dialog_shim(ts)
         field_check = expect and ((expect["kind"] == "action" and expect["action"] in FIELD_ACTIONS)
                                   or (expect["kind"] == "form" and not expect.get("submitted")))
-        if field_check:
-            # A page can undo a field on its own a moment later (a debounced autosave rejected, a delayed
-            # validator). If the action scheduled such a short timer and it hasn't fired yet, wait for it, so the
-            # field is read after it. Pages that schedule nothing don't wait.
-            due = await self._eval_quiet(ts, PENDING_TIMERS_JS) or 0
-            if 0 < due <= 3000:
-                await asyncio.sleep(due / 1000 + 0.05)
-                settled = await self._settle(ts) and settled
+        # Short timers (<= 3 s) the page scheduled in response to this action and that haven't fired yet: a
+        # debounced autosave, a delayed validator, an optimistic message about to be replaced, a delayed
+        # window.open. Lean waits only when there is one, so pages that schedule nothing aren't slowed down.
+        due = (await self._eval_quiet(ts, PENDING_TIMERS_JS) or 0) if expect else 0
+        due = due if 0 < due <= 3000 else 0
+        if expect:
             await self._eval_quiet(ts, DISARM_TIMERS_JS)
+        if field_check and due:
+            # A page can undo a field on its own a moment later: read the field after that timer fires.
+            await asyncio.sleep(due / 1000 + 0.05)
+            settled = await self._settle(ts) and settled
+            due = 0
         # Field states are read before the after-snapshot so they describe the same moment.
         states = {}
         if expect and expect["kind"] == "action" and expect["action"] in ("fill", "clear", "select", "check", "uncheck", "upload"):
@@ -1121,11 +1132,11 @@ class Session:
         if len(self.tabs) > tabs_before:
             return await self._new_tab_result(ts, prefix, expect)
         d = diff(before, after)
-        if d == "" and expect and expect.get("action") in ("click", "press"):
+        if d == "" and expect and expect.get("action") in ("click", "press") and (ts.opens_tab or due):
             # Nothing changed in this tab. A popup's "page" event can arrive after settle on slow machines,
             # so give a new tab a short grace period before reporting "no visible change". Clicks that did
             # change something never wait. A dialog note doesn't skip this: a dialog can come before the popup.
-            for _ in range(15):
+            for _ in range(max(15, int(due / 100) + 4)):
                 if len(self.tabs) > tabs_before:
                     return await self._new_tab_result(ts, prefix, expect)
                 await asyncio.sleep(0.1)
@@ -1163,11 +1174,12 @@ class Session:
             if evidence_action:
                 sig["plain_errors"] = await self._plain_errors(ts, after, page_changed)
                 # An optimistic toast ("Saved") that the page replaces with an error a moment later: when a live
-                # message is the only evidence for a click or submit, read the page again ~1.2 s later before
-                # trusting it.
-                if sig["success"] and not sig["errors"] and not sig["plain_errors"] and not page_changed \
+                # message is the only evidence for a click or submit and the page has a timer pending, read the
+                # page again after it fires before trusting the message.
+                if due and sig["success"] and not sig["errors"] and not sig["plain_errors"] and not page_changed \
                         and not after.data.get("routeChanged") and not sig["target_gone"] and not sig["cleared"]:
-                    await asyncio.sleep(1.2)
+                    await asyncio.sleep(due / 1000 + 0.05)
+                    await self._settle(ts)
                     after2 = await self._take(ts)
                     sig2 = self._signals(ts, before, after2, diff(before, after2) is None, expect)
                     sig2["plain_errors"] = await self._plain_errors(ts, after2, False)
