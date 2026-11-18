@@ -362,6 +362,8 @@ class BrowserManager:
         self._obscura_broken: str = ""
         self._chromium: Browser | None = None
         self._chromium_ctx: BrowserContext | None = None
+        self.chromium_sandboxed: bool | None = None  # None until Chromium launches; False = runs without its OS sandbox
+        self.chromium_sandbox_note = ""  # why the OS sandbox is off, when it is
         self._guard = None  # netguard.NetGuard: connect-time private-network check for Chromium
 
     async def __aenter__(self):
@@ -461,7 +463,25 @@ class BrowserManager:
             guard = await self._ensure_guard()
             if guard:
                 args += [f"--proxy-server={guard}", "--proxy-bypass-list=<-loopback>"]
-            self._chromium = await self._pw.chromium.launch(headless=True, args=args)
+            # Chromium's own OS sandbox (seatbelt on macOS, user namespaces on Linux) when it starts; containers and
+            # hosts that restrict unprivileged user namespaces can't run it, so fall back and say why.
+            # LEANB_CHROMIUM_SANDBOX=0 forces it off.
+            self.chromium_sandboxed = None
+            if os.environ.get("LEANB_CHROMIUM_SANDBOX", "").strip().lower() in ("0", "false", "no", "off"):
+                why = "turned off by LEANB_CHROMIUM_SANDBOX=0"
+            else:
+                why = ""
+                try:
+                    self._chromium = await self._pw.chromium.launch(headless=True, args=args, chromium_sandbox=True)
+                    self.chromium_sandboxed, self.chromium_sandbox_note = True, ""
+                except Exception as e:  # noqa: BLE001 - any launch failure: retry without the sandbox
+                    first = next((l.strip() for l in str(e).splitlines() if l.strip()), type(e).__name__)
+                    why = f"sandboxed launch failed: {type(e).__name__}: {first[:200]}"
+            if not self.chromium_sandboxed:
+                self._chromium = await self._pw.chromium.launch(headless=True, args=args, chromium_sandbox=False)
+                self.chromium_sandboxed = False
+                self.chromium_sandbox_note = why
+                self._note(f"chromium OS sandbox unavailable ({why}); running without it")
             self._chromium_ctx = await self._chromium.new_context(viewport=self.viewport)
             for js in self.init_scripts:
                 await self._chromium_ctx.add_init_script(js)

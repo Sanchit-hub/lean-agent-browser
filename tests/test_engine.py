@@ -331,3 +331,62 @@ async def test_engine_crash_mid_session_is_explained_and_recoverable(base):
         assert err.startswith("Error: the obscura engine for this page closed or crashed"), err
         again = (await lb.call("open", {"url": base + "/order.html"}))[0]
         assert "engine: chromium (navigation failed on obscura" in again and "Place order" in again, again[:300]
+
+
+async def test_chromium_tries_its_os_sandbox_and_reports_it(monkeypatch):
+    """The first launch asks for Chromium's OS sandbox; the result is exposed whether or not the host allows it."""
+    from playwright.async_api import BrowserType
+    monkeypatch.delenv("LEANB_CHROMIUM_SANDBOX", raising=False)
+    calls, real = [], BrowserType.launch
+
+    async def spy(self, **kw):
+        calls.append(kw.get("chromium_sandbox"))
+        return await real(self, **kw)
+    monkeypatch.setattr(BrowserType, "launch", spy)
+    async with BrowserManager(prefer="chromium") as bm:
+        tab = await bm.open("data:text/html,<title>t</title>")
+        assert tab.engine == "chromium"
+        assert calls[0] is True
+        assert bm.chromium_sandboxed in (True, False)
+        if bm.chromium_sandboxed:
+            assert calls == [True] and not bm.chromium_sandbox_note
+        else:  # e.g. Linux CI without unprivileged user namespaces
+            assert calls == [True, False] and bm.chromium_sandbox_note
+            assert any("OS sandbox unavailable" in e for e in bm.events), bm.events
+        if eng.IS_MAC:
+            assert bm.chromium_sandboxed, bm.chromium_sandbox_note
+
+
+async def test_chromium_falls_back_without_os_sandbox(monkeypatch):
+    from playwright.async_api import BrowserType
+
+    from lean_browser import doctor
+    monkeypatch.delenv("LEANB_CHROMIUM_SANDBOX", raising=False)
+    calls, real = [], BrowserType.launch
+
+    async def no_sandbox_here(self, **kw):
+        calls.append(kw.get("chromium_sandbox"))
+        if kw.get("chromium_sandbox"):
+            raise RuntimeError("Browser closed.\nNo usable sandbox!")
+        return await real(self, **kw)
+    monkeypatch.setattr(BrowserType, "launch", no_sandbox_here)
+    async with BrowserManager(prefer="chromium") as bm:
+        tab = await bm.open("data:text/html,<title>fallback</title>")
+        assert await tab.page.title() == "fallback"
+        assert calls == [True, False]
+        assert bm.chromium_sandboxed is False
+        assert "RuntimeError: Browser closed." in bm.chromium_sandbox_note
+        assert any("chromium OS sandbox unavailable" in e for e in bm.events), bm.events
+        c = doctor.check_chromium_sandbox({"sandboxed": bm.chromium_sandboxed, "why": bm.chromium_sandbox_note})
+        assert c.status == doctor.WARN and "Browser closed" in c.detail and "user namespaces" in c.fix
+
+    # The escape hatch skips the sandboxed attempt entirely.
+    calls.clear()
+    monkeypatch.setenv("LEANB_CHROMIUM_SANDBOX", "0")
+    async with BrowserManager(prefer="chromium") as bm:
+        await bm.open("data:text/html,<title>off</title>")
+        assert calls == [False] and bm.chromium_sandboxed is False
+        assert "LEANB_CHROMIUM_SANDBOX" in bm.chromium_sandbox_note
+        c = doctor.check_chromium_sandbox({"sandboxed": False, "why": bm.chromium_sandbox_note})
+        assert c.status == doctor.WARN and "Unset LEANB_CHROMIUM_SANDBOX" in c.fix
+    assert doctor.check_chromium_sandbox({"sandboxed": True, "why": ""}).status == doctor.PASS

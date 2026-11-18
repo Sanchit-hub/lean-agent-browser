@@ -8,6 +8,9 @@
   https://); `NO_PROXY` hosts connect directly. Only `socks://` proxies still turn it off, with a note.
 - A dedicated DNS-rebinding test: a name that first resolves to a public address and then to
   169.254.169.254 is refused on the second connection.
+- Chromium now runs inside its own OS sandbox where the host allows it (on for macOS). Where it can't start
+  (Linux without unprivileged user namespaces, most containers), Lean runs Chromium without it, records why,
+  and `leanb doctor` shows `WARN os sandbox`. `LEANB_CHROMIUM_SANDBOX=0` forces it off.
 - A link that opens a popup no longer sometimes reports the new tab while it is still `about:blank`: Lean
   waits for the popup to load its own page first. Seen once on the macOS CI runner after the v0.7.0 tag.
 

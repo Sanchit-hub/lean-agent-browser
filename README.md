@@ -250,9 +250,9 @@ snapshot_timeout_s = 2.0            # slower snapshots move the page to Chromium
   listens on localhost. Its CDP port is bound to 127.0.0.1 and needs a
   random 32-byte token per launch.
 - **Chromium never touches your profile.** It is Playwright's bundled build with a throwaway
-  profile, not your own Chrome. It is not OS-sandboxed by Lean: Playwright starts Chromium with
-  Chromium's own sandbox turned off, so pages that fall back to Chromium don't get Obscura's isolation.
-  The network rules below still apply to it.
+  profile, not your own Chrome. Lean starts it with Chromium's own OS sandbox where the host allows it
+  (on macOS; `leanb doctor` warns where it can't, e.g. Linux without user namespaces). It doesn't get
+  Obscura's no-home-folder isolation. The network rules below still apply to it.
 - **No private network by default.** localhost, RFC1918 and link-local (including 169.254.169.254)
   are blocked on both engines unless you set `allow_private_network`, so falling back to Chromium
   never widens network access. Both engines connect through a local guard that checks the resolved

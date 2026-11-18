@@ -47,6 +47,12 @@ Run `leanb install` (or `leanb setup`). Until then Chromium serves every page, w
 `sudo apt install bubblewrap`. Obscura only ever runs inside a sandbox, so without bubblewrap it stays off and
 Chromium serves every page. Chromium does not get the same isolation (see the README's Security model).
 
+**`WARN os sandbox: Chromium runs without its OS sandbox`**
+Chromium works, but without its own sandbox around page renderers, so a browser exploit would get further.
+On Linux the sandbox needs unprivileged user namespaces: Ubuntu 24.04 restricts them (same fix as the
+bubblewrap entry below), and most containers don't allow them. The reason after the colon says what failed.
+If it says `LEANB_CHROMIUM_SANDBOX=0`, unset that variable.
+
 **`FAIL obscura: ... bwrap: setting up uid map: Permission denied` (Ubuntu 24.04)**
 Ubuntu 24.04 restricts unprivileged user namespaces, which bubblewrap needs. Either allow them
 (`sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`, and add it to `/etc/sysctl.d/` to keep it)
