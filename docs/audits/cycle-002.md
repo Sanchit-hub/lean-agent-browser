@@ -68,4 +68,4 @@ Checked and found sound, now with tests:
 | ✓ | Dedicated DNS-rebinding test | The guard covered it without a test | **Done** (unreleased): `test_dns_rebinding_is_refused` |
 | P2 | Success words in more languages | Non-English success ends `unverified` | Add words with fixtures per language |
 | P3 | Caller-supplied action key for the duplicate guard | Guard across sessions and restarts | Design first; needs a schema change |
-| P3 | Real-site canary suite (read-only) | Fixture results don't prove real sites | 10 public read-only pages, weekly |
+| ✓ | Real-site canary suite (read-only) | Fixture results don't prove real sites | **Done** (unreleased): `scripts/canary.py`, weekly `canary.yml` |
