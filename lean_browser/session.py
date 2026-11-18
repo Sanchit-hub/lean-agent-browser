@@ -198,6 +198,18 @@ FORM_INVALID_JS = r"""(el, enter) => {
   return bad.length ? bad : null;
 }"""
 
+# Occurrences of expected text on the page, not counting negated ones ("not saved", "unsuccessful").
+EXPECT_COUNT_JS = r"""t => { const n = s => (s || '').replace(/\s+/g, ' ').toLowerCase();
+  const body = n(document.body && (document.body.innerText || document.body.textContent)), w = n(t).trim();
+  if (!w) return 0;
+  let c = 0, i = 0;
+  while ((i = body.indexOf(w, i)) !== -1) {
+    const pre = body.slice(Math.max(0, i - 30), i);
+    if (!/(\bnot|\bnever|n[’']t|\bno longer|\bun|\bfailed to|\bcould not be)\s*(\w+\s+){0,2}$/.test(pre)) c++;
+    i += w.length;
+  }
+  return c; }"""
+
 _norm = lambda x: " ".join(str(x or "").split()).lower()
 
 # Outcome signals. English-only heuristics: a site that shows neither stays "unverified"; pass expect= then.
@@ -205,7 +217,10 @@ SUCCESS_RE = re.compile(r"\b(thank(s| you)|success(ful(ly)?)?|saved|created|rece
                         r"updated|added|welcome|complete(d)?|booked|registered|published|posted)\b", re.I)
 ERROR_RE = re.compile(r"\b(errors?|invalid|incorrect|failed|failure|wrong|already (taken|exists|registered|in use)|"
                       r"is taken|denied|not allowed|forbidden|unable|could ?n[o\'’]t|try again|declined|rejected|"
-                      r"must (be|have|include|match|accept)|(is|are) required|do(es)? not match)\b", re.I)
+                      r"must (be|have|include|match|accept)|(is|are) required|do(es)? not match|"
+                      # a few common error words in other languages (success words stay English-only)
+                      r"fehler|fehlgeschlagen|erreur|échec|errore|fallito|fall[oó]|erro|falhou|ошибка|не удалось|"
+                      r"त्रुटि|विफल)\b|错误|失败|エラー|失敗|오류|실패", re.I)
 _SUCCESS_WORDS = (r"(sent|saved|submitted|placed|confirmed|created|received|updated|added|completed?|booked|"
                   r"registered|published|posted|processed|accepted|approved|delivered|successful(ly)?)")
 # "was not saved", "wasn't sent", "could not be completed", "never received", "unsuccessful": failures that
@@ -303,6 +318,7 @@ class TabState:
     dialog_policy: str = "accept"
     nav_status: int | None = None
     pre_lines: set | None = None        # visible text lines before a submit-like action (pending detection)
+    pre_expect: dict | None = None      # expect= state before the action (stale evidence doesn't count)
 
     @property
     def page(self) -> Page:
@@ -714,6 +730,10 @@ class Session:
                 raise ActionError("blocked: the form's own validation stops this submit (a browser would too): "
                                   + "; ".join(bad[:4]) + ". Fill those fields, then submit again")
         ts.pre_lines = await self._page_lines(ts) if safety == "unsafe" else None
+        # For clicks and key presses, expect= is the evidence, so it has to be new. For field actions the field's
+        # own state is the evidence, and expect= is an extra condition that just has to hold afterwards.
+        ts.pre_expect = None if action in ("fill", "clear", "select", "check", "uncheck", "upload") \
+            else await self._expect_pre(ts, expect)
         tabs_before = len(self.tabs)
         await self._sync_dialog_policy(ts)
         ts.nav_status = None
@@ -989,6 +1009,10 @@ class Session:
             status = ""
         elif submit_like and not expect.get("expect"):
             status = self._finish(expect, "unverified", ["a new tab opened; read it to see whether this worked"])
+        elif expect.get("expect"):
+            nts.pre_expect = None
+            ok, why = await self._check_expect(nts, expect["expect"], None)
+            status = self._finish(expect, "verified" if ok else "unverified", ["new tab opened", why])
         else:
             status = self._finish(expect, "verified", ["new tab opened"])
         return status + prefix + (note + "\n" if note else "") + self._render_full(nts, await self._take(nts))
@@ -1035,24 +1059,47 @@ class Session:
         return {"errors": errors, "success": success, "target_gone": target_gone, "cleared": cleared,
                 "pending": pending, "same_form": same_form}
 
-    async def _check_expect(self, ts: TabState, want: str, after: Snapshot) -> tuple[bool, str]:
-        """Caller's postcondition: "url:<part>", "gone:<id>", or text that must appear. Bounded to ~3 s."""
+    async def _expect_pre(self, ts: TabState, want: str | None) -> dict | None:
+        """The expectation's state before the action, so evidence that was already there doesn't count."""
+        if not want:
+            return None
         w = want.strip()
+        try:
+            if w.lower().startswith("url:"):
+                return {"url": ts.page.url}
+            if w.lower().startswith("gone:"):
+                el = (await ts.page.evaluate_handle(RESOLVE_JS, int(w[5:].strip()))).as_element()
+                return {"present": el is not None}
+            return {"count": await ts.page.evaluate(EXPECT_COUNT_JS, w)}
+        except Exception:
+            return None
+
+    async def _check_expect(self, ts: TabState, want: str, after: Snapshot | None) -> tuple[bool, str]:
+        """Caller's postcondition: "url:<part>", "gone:<id>", or text that must appear. Bounded to ~3 s.
+        For clicks, key presses and submits the evidence must be new: text must appear more often than before the action (and not as "not <text>"),
+        a URL part must not already have been in the URL, and a gone element must have existed before."""
+        w = want.strip()
+        pre = ts.pre_expect or {}
         deadline = time.time() + 3
         while True:
             try:
                 if w.lower().startswith("url:"):
                     part = w[4:].strip()
                     ok, why = part in ts.page.url, f"url contains {part!r}"
+                    if ok and "url" in pre and part in pre["url"] and pre["url"] == ts.page.url:
+                        return False, f"the url already contained {part!r} before the action; not evidence"
                 elif w.lower().startswith("gone:"):
                     gid = int(w[5:].strip())
+                    if pre.get("present") is False:
+                        return False, f"id {gid} was already gone before the action; not evidence"
                     el = (await ts.page.evaluate_handle(RESOLVE_JS, gid)).as_element()
                     ok, why = el is None or not await el.evaluate("e => e.isConnected && !!(e.offsetWidth || e.offsetHeight || e.getClientRects().length)"), f"id {gid} gone"
                 else:
-                    ok = await ts.page.evaluate(
-                        "t => { const n = s => (s || '').replace(/\\s+/g, ' ').toLowerCase();"
-                        " return n(document.body && (document.body.innerText || document.body.textContent)).includes(n(t)); }", w)
-                    why = f"text {w[:60]!r} found"
+                    n = await ts.page.evaluate(EXPECT_COUNT_JS, w)
+                    before = pre.get("count") or 0
+                    ok, why = n > before, f"text {w[:60]!r} found"
+                    if not ok and before and time.time() >= deadline:
+                        return False, f"text {w[:60]!r} was already on the page before the action; not evidence"
             except (ValueError, TypeError):
                 raise ActionError('expect must be text, "url:<part>" or "gone:<id>"')
             except Exception:
@@ -1221,6 +1268,7 @@ class Session:
         uncertain = None
         ts.nav_status = None
         ts.pre_lines = await self._page_lines(ts) if submit else None
+        ts.pre_expect = await self._expect_pre(ts, expect)
         if submit and not errors:
             try:
                 if submit is True:

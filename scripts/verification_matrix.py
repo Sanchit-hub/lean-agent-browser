@@ -21,7 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from evals.bench.verification import CASES, classify, run_case  # noqa: E402
+from evals.bench.verification import CASES, CASES_EXPECT, classify, run_case, run_expect_case  # noqa: E402
 from evals.fixtures.server import serve  # noqa: E402
 from lean_browser import __version__  # noqa: E402
 from lean_browser.engine import BrowserManager, find_obscura  # noqa: E402
@@ -30,13 +30,14 @@ from lean_browser.settle import SETTLE_INIT_JS  # noqa: E402
 
 
 async def one(base: str, engine: str, c) -> tuple[str, float, str]:
+    """c is an action case (7 fields) or an expect= case (8 fields)."""
     urllib.request.urlopen(base + "/api/reset").read()
     bm = BrowserManager(allow_private_network=True, prefer=engine, init_scripts=[SETTLE_INIT_JS],
                         obscura_init_scripts=[OBSCURA_DIALOG_SHIM])
     await bm.start()
     t = time.monotonic()
     try:
-        status, out = await run_case(Session(bm), base, c)
+        status, out = await (run_expect_case if len(c) == 8 else run_case)(Session(bm), base, c)
     finally:
         await bm.close()
     return status, time.monotonic() - t, out
@@ -56,12 +57,13 @@ async def main() -> int:
     rows, matrix = [], collections.Counter()
     try:
         for engine in engines:
-            for c in CASES:
+            for c in CASES + CASES_EXPECT:
+                happened = c[6] if len(c) == 8 else c[5]
                 for r in range(a.runs):
                     status, secs, out = await one(base, engine, c)
-                    cls = classify(c[5], status)
+                    cls = classify(happened, status)
                     matrix[cls] += 1
-                    rows.append({"case": c[0], "engine": engine, "run": r + 1, "happened": c[5], "status": status,
+                    rows.append({"case": c[0], "engine": engine, "run": r + 1, "happened": happened, "status": status,
                                  "class": cls, "seconds": round(secs, 2)})
                     if cls == "FALSE_VERIFIED":
                         print(f"FALSE VERIFIED  {engine:8} {c[0]}: {out.splitlines()[0] if out else ''}")
@@ -73,7 +75,7 @@ async def main() -> int:
     print(f"\nlean-agent-browser {__version__}, {platform.system()} {platform.machine()}, {a.runs} run(s) per case per engine\n")
     print(f"{'case':24} {'engine':9} {'happened':9} statuses")
     for (cid, eng), cnt in by_case.items():
-        happened = next(c[5] for c in CASES if c[0] == cid)
+        happened = next(r["happened"] for r in rows if r["case"] == cid)
         print(f"{cid:24} {eng:9} {str(happened):9} {dict(cnt)}")
     print("\nconfusion matrix:", dict(matrix))
     secs = sorted(r["seconds"] for r in rows)

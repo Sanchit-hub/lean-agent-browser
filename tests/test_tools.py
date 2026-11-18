@@ -1,5 +1,6 @@
 """Tool layer: schema budget, LeanBrowser.call, extract, screenshot, MCP stdio round-trip, CLI,
 and the lean eval loop with a scripted (offline) client."""
+import asyncio
 import json
 import os
 import subprocess
@@ -184,3 +185,13 @@ async def test_private_network_error_says_how_to_allow_it():
         out = await lb.call("open", {"url": "http://localhost:8123/"})
     assert out[0].startswith("Error: blocked: localhost is a private-network address"), out
     assert "allow_private_network = true" in out[0]
+
+
+async def test_concurrent_python_calls_do_not_mix_pages(base):
+    """asyncio.gather on one LeanBrowser used to interleave navigations: both calls got the last page and
+    Obscura's navigation failed. Calls are serialized now, and each gets its own page."""
+    from lean_browser.tools import Config, LeanBrowser
+    async with LeanBrowser(Config(allow_private_network=True)) as lb:
+        a, b = await asyncio.gather(lb.call("open", {"url": base + "/signup.html"}), lb.call("open", {"url": base + "/todo.html"}))
+    assert "url: /signup.html" in a[0] and "url: /todo.html" in b[0], (a[0][:200], b[0][:200])
+    assert "navigation failed" not in a[0] + b[0]

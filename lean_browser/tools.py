@@ -9,6 +9,7 @@ Longer documentation lives in README.md, not here.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import tomllib
 from dataclasses import dataclass, field
@@ -122,6 +123,7 @@ class LeanBrowser:
         self.memory: dict[str, dict] = {}
         import os
         self.tracer = None
+        self._lock = asyncio.Lock()  # one page session: tool calls run one at a time, even under asyncio.gather
         if c.trace or os.environ.get("LEANB_TRACE"):
             from lean_browser.trace import Tracer
             self.tracer = Tracer(page_text=c.trace_page_text or None)
@@ -299,7 +301,12 @@ class LeanBrowser:
 
     async def call(self, name: str, args: dict | None) -> list:
         """Run one tool. Returns a list of content parts: str (text) or bytes (PNG).
-        Errors come back as a single 'Error: ...' string, never as exceptions."""
+        Errors come back as a single 'Error: ...' string, never as exceptions. Concurrent calls are serialized:
+        one browser session has one current page, so interleaving them would mix up pages."""
+        async with self._lock:
+            return await self._call_traced(name, args)
+
+    async def _call_traced(self, name: str, args: dict | None) -> list:
         if not self.tracer:
             return await self._call(name, args)
         import time
@@ -362,5 +369,10 @@ class LeanBrowser:
             return [f"Error: missing argument {e}"]
         except Exception as e:  # never crash the agent loop
             msg = str(e).splitlines()[0] if str(e) else ""
+            if "has been closed" in msg or type(e).__name__ == "TargetClosedError":
+                eng = s.cur.tab.engine if s.active >= 0 else "browser"
+                return [f"Error: the {eng} engine for this page closed or crashed. Call open(url) to continue on a "
+                        "fresh engine. If your last action was a submit or payment, check whether it took effect "
+                        "before repeating it."]
             kind = "" if type(e).__name__ == "Error" else f"{type(e).__name__}: "
             return [f"Error: {kind}{msg[:200]}"]

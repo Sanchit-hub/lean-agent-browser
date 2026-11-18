@@ -82,6 +82,48 @@ case("check-reverted", "/v/terms.html", "check", 'checkbox "Email me offers"', N
      shell("Prefs", "<main><h1>Preferences</h1><label><input type='checkbox' id='c'> Email me offers</label></main>",
            "document.getElementById('c').addEventListener('change', e => setTimeout(() => { e.target.checked = false; }, 50));"))
 
+# expect= postconditions: the evidence has to be new and not negated
+CASES_EXPECT: list[tuple[str, str, str, str, str | None, str, bool, str]] = []
+
+
+def expect_case(cid, path, action, target, value, expect, happened, note, page):
+    PAGES[path] = page
+    CASES_EXPECT.append((cid, path, action, target, value, expect, happened, note))
+
+
+expect_case("expect-already-true", "/v/x-stale.html", "click", 'button "Save draft"', None, "Saved", False,
+            "'Saved 2 minutes ago' was on the page before; the click does nothing",
+            shell("Draft", "<main><h1>Draft</h1><p>Saved 2 minutes ago</p><button id='s'>Save draft</button></main>",
+                  "document.getElementById('s').onclick = () => {};"))
+expect_case("expect-negated", "/v/x-neg.html", "click", 'button "Save draft"', None, "saved", False,
+            "the page says 'Draft not saved'",
+            shell("Draft", "<main><h1>Draft</h1><button id='s'>Save draft</button><p id='o'></p></main>",
+                  "document.getElementById('s').onclick = () => { document.getElementById('o').textContent = 'Draft not saved: server error'; };"))
+expect_case("expect-url-already", "/v/x-url.html?step=review", "click", 'button "Confirm booking"', None, "url:step=review", False,
+            "the URL already contained the expected part; the click does nothing",
+            shell("Booking", "<main><h1>Review</h1><button id='c'>Confirm booking</button></main>",
+                  "document.getElementById('c').onclick = () => {};"))
+expect_case("expect-new-text", "/v/x-new.html", "click", 'button "Save draft"', None, "Draft saved", True,
+            "the expected text appears after the click",
+            shell("Draft", "<main><h1>Draft</h1><button id='s'>Save draft</button><p id='o'></p></main>",
+                  "document.getElementById('s').onclick = () => { document.getElementById('o').textContent = 'Draft saved at 10:42'; };"))
+expect_case("expect-again", "/v/x-again.html", "click", 'button "Add item"', None, "Item added", True,
+            "'Item added' was there once and appears a second time",
+            shell("List", "<main><h1>List</h1><ul id='l'><li>Item added</li></ul><button id='a'>Add item</button></main>",
+                  "document.getElementById('a').onclick = () => { const li = document.createElement('li'); li.textContent = 'Item added';"
+                  " document.getElementById('l').appendChild(li); };"))
+
+expect_case("expect-new-tab", "/v/x-tab.html", "click", 'button "Place order"', None, "Payment successful", False,
+            "opens a tab that says the payment failed; the expectation must be checked in that tab",
+            shell("Checkout", "<main><h1>Checkout</h1><button id='p'>Place order</button></main>",
+                  "document.getElementById('p').onclick = () => window.open('/v/pay-failed.html', '_blank');"))
+
+# non-English error after a navigation
+_FORM_DE = "<main><h1>Konto</h1><form method='post' action='/v/api/de'><label>E-Mail <input name='e' value='a@b.de'></label><button type='submit'>Speichern</button></form></main>"
+POST["/v/api/de"] = lambda f, st: (200, shell("Fehler", "<main><h1>Fehler</h1><p>Die Änderung konnte nicht gespeichert werden.</p></main>"), None)
+case("nav-error-german", "/v/de.html", "click", 'button "Speichern"', None, False,
+     "German error page after the submit ('Fehler')", shell("Konto", _FORM_DE))
+
 # ---------- the outcome DID happen: `verified` is right, `unverified` is an honest miss ----------
 
 PAGES["/v/thanks.html"] = shell("Thanks", "<main><h1>Thank you, your order is placed</h1></main>")
@@ -129,6 +171,21 @@ case("tab-switch", "/v/tabs.html", "click", 'tab "Specs"', None, True, "a tab sh
            "<button role='tab' aria-selected='false' id='b'>Specs</button></div><div role='tabpanel' id='p'>Great camera.</div></main>",
            "document.getElementById('b').onclick = () => { document.getElementById('b').setAttribute('aria-selected', 'true');"
            " document.getElementById('a').setAttribute('aria-selected', 'false'); document.getElementById('p').textContent = '6.1 inch, 128 GB'; };"))
+
+
+async def run_expect_case(sess, base: str, c) -> tuple[str, str]:
+    import re
+    cid, path, action, target, value, expect, _happened, _note = c
+    out = await sess.open(base + path)
+    m = re.search(r"(\d+): " + target, out)
+    if not m:
+        return "error", f"target {target!r} not found in:\n{out}"
+    try:
+        res = await sess.act(action, int(m.group(1)), value, expect=expect)
+    except Exception as e:  # noqa: BLE001
+        return "error", f"{type(e).__name__}: {e}"
+    w = re.search(r"status: (\w+)", res)
+    return (w.group(1) if w else "none"), res
 
 
 async def run_case(sess, base: str, c) -> tuple[str, str]:

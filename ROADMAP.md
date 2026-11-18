@@ -18,6 +18,8 @@ out of scope. Only CI-tested platforms are listed as supported.
 
 ## Implemented (verified in code and tests, 2026-11-18)
 
+Claim-by-claim status: `docs/PRODUCT_TRUTH.md`. Open engineering backlog: `docs/audits/cycle-002.md`.
+
 | Area | What exists | Where |
 |---|---|---|
 | Engines | Obscura **0.2.7** default (0.2.6 rollback on macOS), hash-pinned per platform, sandboxed (`sandbox-exec` on macOS, bubblewrap on Linux), dies with its client; Chromium fallback with capability routing; hung pages move to Chromium | `engine.py`, `docs/engines.md` |

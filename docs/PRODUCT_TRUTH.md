@@ -1,13 +1,42 @@
-# Baseline (verified 2026-11-18, updated for v0.6.0)
+# Product truth (verified 2026-11-18)
 
-What exists today, checked against the code, the test suite and CI rather than older notes. Update it
-at the end of each milestone. Facts here come from the commands named next to them.
+What exists today, checked against the code, the tests and CI rather than older notes or the README. Each
+public claim maps to where it is implemented and what proves it. Update this at the end of every cycle.
+Status is one of: **verified** (a test or recorded run proves it), **partial** (true with stated limits),
+**unverified** (no evidence yet), **not supported**.
+
+## Truth ledger
+
+| Claim | Implementation | Evidence | Status | Risk |
+|---|---|---|---|---|
+| Compact snapshots with stable ids, collapsed groups, find/expand | `snapshot.js`, `snapshot.py` | `tests/test_snapshot.py` (both engines) | verified | low |
+| `verified` means the page shows evidence the outcome happened | `session.py` `_signals`, `_status`, `_after` | `tests/test_verification.py`; `scripts/verification_matrix.py` 400 runs, 0 false verified | verified on the suite; English-only success words | medium |
+| `expect=` postconditions need new, non-negated evidence | `session.py` `_expect_pre`, `_check_expect`, `EXPECT_COUNT_JS` | `test_expect_needs_fresh_unnegated_evidence` (5 cases × 2 engines) | verified | low |
+| Form validation is checked before a submit (Obscura doesn't validate) | `session.py` `FORM_INVALID_JS`, `_form_invalid` | `html5-required` case | verified | low |
+| Submits, payments and deletes are never retried automatically | `session.py` `_perform_guarded`, `retry_safety` | `test_slow_submit_times_out_honestly_and_is_not_repeated`, `test_retry_safety_classes` | verified | low |
+| Repeating an unsafe action is blocked unless `value="repeat"` | `session.py` `act` (`_unsafe_log`), `fill_form` | `test_duplicate_*` | partial: per session and page; not across sessions or restarts | medium |
+| Re-rendered targets are re-found only on an unambiguous, non-contradicting match | `session.py` `_resolve_or_recover` | `test_conditional_action_retried_once_after_rerender`, `test_reordered_list_keeps_ids_with_their_rows`, `rerender` task | verified | low |
+| `dry_run` dispatches nothing | `session.py` `act`, `fill_form` | `test_dry_run_*`, clean-install MCP round trip | verified | low |
+| Private network blocked on both engines, including redirect hops | `tools.py` `_check_domain`, `engine.py` `_route`, `netguard.py` | `test_redirect_to_private_address_is_blocked[both]`, `test_private_network_*`, `test_netguard_refuses_private_targets` | partial: guard off when `HTTP(S)_PROXY` is set | medium |
+| Obscura is hash-pinned and always sandboxed | `engine.py` `verify_obscura`, `ObscuraProcess`, `sandbox_profile`, `bwrap_args` | `tests/test_engine.py` sandbox tests (macOS and Linux CI) | verified | low |
+| Engine fallback is visible, including after an engine crash | `engine.py` (`engine: chromium (reason)` in every header) | fallback tests; `test_engine_crash_mid_session_is_explained_and_recoverable` | verified | low |
+| Uploads only from allowed folders (symlinks and `..` resolved) | `session.py` `_check_upload` | `test_upload_on_chromium_and_guard`, `test_upload_path_guard_resolves_symlinks_and_dotdot` | verified | low |
+| Passwords never shown; traces redact secrets and keep page text only on opt-in | `snapshot.js`, `trace.py` | `tests/test_trace.py` | verified | low |
+| Page content is marked untrusted; hidden text dropped | `snapshot.py` `wrap_untrusted`, `snapshot.js` | `inject-delete`, `inject-exfil` benchmark tasks; snapshot tests | partial: reduces prompt injection, does not prevent it | medium |
+| MCP: 7 tools with a stable contract; invalid calls are errors, not crashes; stdout is pure JSON-RPC | `mcp_server.py`, `tools.py` | `tests/test_contract.py` | verified | low |
+| Separate agents don't share state; concurrent calls don't mix pages | one browser per `leanb mcp` process; locks in `mcp_server.py` and `LeanBrowser.call` | `test_two_servers_do_not_share_state`, `test_concurrent_*` | verified | low |
+| Install, setup, doctor, Claude Code registration, upgrade, uninstall | `onboarding.py`, `doctor.py`, `claude_code.py`, `installer.py` | `tests/test_onboarding.py`, `scripts/smoke_clean_install.sh` in CI on 3 platforms | verified by us; **unverified by outside users** | medium |
+| Supported platforms: macOS arm64, Ubuntu 24.04 x86_64 and arm64 | CI matrix | `ci.yml` runs | verified | low |
+| Fewer tokens than Playwright MCP | `evals/` | 100 fixture tasks × 3 runs (`docs/benchmark.md`) | partial: our own fixture tasks only, not real sites | medium |
+| Chromium is OS-sandboxed | — | Playwright starts it with its sandbox off | not supported (documented) | medium |
+| Pages in other languages | `ERROR_RE` has common error words in several languages | `nav-error-german` case | partial: success words English-only, so these usually end `unverified` | medium |
+| Exactly-once execution on arbitrary websites | — | — | not supported, not claimed | — |
 
 ## Release state
 
 | Item | Value | Source |
 |---|---|---|
-| Version | 0.6.0 (`lean_browser.__version__`, the only version source; `pyproject.toml` reads it) | `leanb --version` |
+| Version | 0.7.0 (`lean_browser.__version__`, the only version source; `pyproject.toml` reads it) | `leanb --version` |
 | Before this baseline | `main` at `575c6bf` (v0.4.0); no git tags and no GitHub Releases existed | `git tag`, `gh api .../releases` |
 | Repository | public, Apache-2.0 | `gh repo view` |
 | PyPI | not published | |
@@ -65,7 +94,7 @@ correction (46,946). Raw files are in `evals/results/20261116-014739-claude-cli/
 `evals/results/20261116-021951-claude-cli/`; method and caveats are in `docs/benchmark.md`. agent-browser has
 only the older 18-task, 1-run result. Every task was written by the project author.
 
-## Discrepancies found and fixed in this pass
+## Discrepancies found and fixed (v0.5.0)
 
 | Found | Fix |
 |---|---|

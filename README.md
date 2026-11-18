@@ -130,7 +130,8 @@ A click being sent is not the same as the task succeeding. Every `act` and `fill
 | `timed_out` | The page was still busy when the wait ended |
 | `done` | Hover, focus, scroll: nothing to verify |
 
-- **`expect=`** states the postcondition: text that must appear, `url:/thanks`, or `gone:<id>`.
+- **`expect=`** states the postcondition: text that must appear, `url:/thanks`, or `gone:<id>`. For a click or
+  submit the evidence must be new: text that was already on the page, or appears as "not saved", doesn't count.
 - **No false success.** A submit is `verified` only on a navigation (not the same form coming back), a new
   success message that isn't negated, or the button or form clearing without a "Processing…" left on the page.
   While the page says it is still processing, Lean waits up to 8 s for the answer. A release fails if any
@@ -326,7 +327,7 @@ export ANTHROPIC_API_KEY=...
 ### Tests and layout
 
 ```bash
-.venv/bin/python -m pytest -q        # 443 passed, 3 skipped on 2026-11-18 (macOS arm64); local fixture site, both engines
+.venv/bin/python -m pytest -q        # 464 passed, 3 skipped on 2026-11-18 (macOS arm64); local fixture site, both engines
 .venv/bin/python scripts/snap.py login.html,orders.html obscura    # look at snapshots
 ```
 

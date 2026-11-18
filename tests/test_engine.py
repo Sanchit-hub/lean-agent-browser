@@ -1,5 +1,6 @@
 """Engine layer: hardened Obscura launch, feature routing, fallback, and state carry-over.
 Runs against the local fixture site. Obscura tests are skipped if the binary is not installed."""
+import asyncio
 import shutil
 from pathlib import Path
 
@@ -304,3 +305,29 @@ async def test_netguard_refuses_private_targets():
         with pytest.raises(PermissionError):
             await resolve_public(host, 80)
     assert await resolve_public("8.8.8.8", 53) == "8.8.8.8"
+
+
+@needs_obscura
+async def test_engine_crash_mid_session_is_explained_and_recoverable(base):
+    import os
+    import re
+    import signal
+    import subprocess
+
+    from lean_browser.tools import Config, LeanBrowser
+    async with LeanBrowser(Config(allow_private_network=True)) as lb:
+        out = (await lb.call("open", {"url": base + "/login.html"}))[0]
+        assert "engine: obscura" in out
+        pids = subprocess.run(["pgrep", "-f", f"port {lb.bm._obscura.port}"], capture_output=True, text=True).stdout.split()
+        assert pids
+        for pid in pids:
+            try:
+                os.kill(int(pid), signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        await asyncio.sleep(0.5)
+        uid = int(re.search(r'(\d+): textbox "Username"', out).group(1))
+        err = (await lb.call("act", {"action": "fill", "id": uid, "value": "demo"}))[0]
+        assert err.startswith("Error: the obscura engine for this page closed or crashed"), err
+        again = (await lb.call("open", {"url": base + "/order.html"}))[0]
+        assert "engine: chromium (navigation failed on obscura" in again and "Place order" in again, again[:300]

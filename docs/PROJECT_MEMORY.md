@@ -1,7 +1,7 @@
 # Project memory: Lean Agent Browser
 
 A living record of what this project is, what has been decided, and what is on this Mac.
-Update it whenever something important changes. Last updated: 2026-11-18 (v0.6.0: no false success, network guard).
+Update it whenever something important changes. Last updated: 2026-11-18 (v0.7.0: source-level audit cycle 002).
 
 ## What we're building
 A token-lean browser for AI agents. Pages come back as compact text with numeric ids, and actions
@@ -53,6 +53,14 @@ verified against evidence, safe recovery. Token efficiency stays an advantage; r
 - **Not done in v0.3 (done in v0.4.0):** the 100-task benchmark and Linux. Testing by outside developers is
   still open; the user will arrange it.
 
+## v0.7.0 (2026-11-18): source-level audit, cycle 002 (user's audit spec + continuous factory prompt)
+- Findings and threat model in `docs/audits/cycle-002.md`; claim ledger in `docs/PRODUCT_TRUTH.md` (was BASELINE.md).
+- `expect=` evidence must be fresh and not negated for clicks/submits; new tabs check `expect=`; multilingual
+  error words; `LeanBrowser.call` lock (concurrent Python calls mixed pages); clear engine-crash error.
+- `tests/test_contract.py` with `tests/contract/mcp_tools.json` (regenerate when tools change on purpose).
+- The factory prompt asks for approval before tags/releases: v0.7.0 is committed and pushed but NOT tagged
+  until the user says so. Pushing commits stays allowed (CLAUDE.md).
+
 ## v0.6.0 (2026-11-18): Software Factory spec, Phase 1 (reliability) and part of Phase 3 (security)
 - Verification suite `evals/bench/verification.py` (20 cases × 2 engines): found 14 false `verified` runs, all
   fixed (negated success, Processing… then decline, same form back, ticking clock, confirm then nothing,
@@ -64,7 +72,7 @@ verified against evidence, safe recovery. Token efficiency stays an advantage; r
 
 ## v0.5.0 (2026-11-18): onboarding (from the user's distribution + productisation specs)
 - Specs the user gave: end-user route (pipx, `leanb setup`, doctor, Claude Code registration, first task) and
-  a contributor route (`install.sh`), one codebase. Verified baseline in `docs/BASELINE.md`.
+  a contributor route (`install.sh`), one codebase. Verified baseline in `docs/PRODUCT_TRUTH.md`.
 - `leanb setup` / `doctor` (PASS/WARN/FAIL/NOT SUPPORTED, `--json`, MCP round trip, Claude Code entry) /
   `uninstall` / `--version`. Claude Code is changed only through `claude mcp add-json/get/remove`, user scope,
   and only after a yes (`--yes` for scripts). Tested against the real CLI under a throwaway HOME.

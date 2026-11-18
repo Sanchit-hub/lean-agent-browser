@@ -1,0 +1,207 @@
+[
+ {
+  "description": "Open URL; returns snapshot with element ids.",
+  "input_schema": {
+   "properties": {
+    "block": {
+     "type": "boolean"
+    },
+    "mode": {
+     "enum": [
+      "minimal",
+      "actions",
+      "read",
+      "full"
+     ]
+    },
+    "url": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "url"
+   ],
+   "type": "object"
+  },
+  "name": "open"
+ },
+ {
+  "description": "Current page. expand/more: handles; find: search; within: id's form/table/section.",
+  "input_schema": {
+   "properties": {
+    "budget": {
+     "type": "integer"
+    },
+    "expand": {
+     "type": "string"
+    },
+    "find": {
+     "type": "string"
+    },
+    "mode": {
+     "enum": [
+      "minimal",
+      "actions",
+      "read",
+      "full"
+     ]
+    },
+    "more": {
+     "type": "string"
+    },
+    "within": {
+     "type": "integer"
+    }
+   },
+   "type": "object"
+  },
+  "name": "snapshot"
+ },
+ {
+  "description": "Act on id -> status + changes. select: label. tab: list|new:URL|switch:N|close:N; dialog: accept[:TEXT]|dismiss. expect: text|url:X|gone:ID",
+  "input_schema": {
+   "properties": {
+    "action": {
+     "enum": [
+      "click",
+      "fill",
+      "select",
+      "check",
+      "uncheck",
+      "clear",
+      "press",
+      "hover",
+      "focus",
+      "upload",
+      "scroll",
+      "back",
+      "forward",
+      "reload",
+      "wait_for",
+      "tab",
+      "dialog"
+     ]
+    },
+    "dry_run": {
+     "type": "boolean"
+    },
+    "expect": {
+     "type": "string"
+    },
+    "id": {
+     "type": "integer"
+    },
+    "value": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "action"
+   ],
+   "type": "object"
+  },
+  "name": "act"
+ },
+ {
+  "description": "Fill {id: value}; submit=true submits. dry_run previews.",
+  "input_schema": {
+   "properties": {
+    "dry_run": {
+     "type": "boolean"
+    },
+    "expect": {
+     "type": "string"
+    },
+    "fields": {
+     "additionalProperties": {
+      "type": "string"
+     },
+     "type": "object"
+    },
+    "submit": {
+     "type": [
+      "boolean",
+      "integer",
+      "string"
+     ]
+    }
+   },
+   "required": [
+    "fields"
+   ],
+   "type": "object"
+  },
+  "name": "fill_form"
+ },
+ {
+  "description": "JSON table/list/form with source and row ids. fields: columns; new_only: skip seen rows.",
+  "input_schema": {
+   "properties": {
+    "fields": {
+     "items": {
+      "type": "string"
+     },
+     "type": "array"
+    },
+    "kind": {
+     "enum": [
+      "auto",
+      "table",
+      "list",
+      "form"
+     ]
+    },
+    "new_only": {
+     "type": "boolean"
+    },
+    "within": {
+     "type": "integer"
+    }
+   },
+   "type": "object"
+  },
+  "name": "extract"
+ },
+ {
+  "description": "Notes kept across pages, with source URL.",
+  "input_schema": {
+   "properties": {
+    "action": {
+     "enum": [
+      "set",
+      "get",
+      "list",
+      "delete",
+      "clear"
+     ]
+    },
+    "key": {
+     "type": "string"
+    },
+    "value": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "action"
+   ],
+   "type": "object"
+  },
+  "name": "memory"
+ },
+ {
+  "description": "PNG of viewport or element; annotate labels ids.",
+  "input_schema": {
+   "properties": {
+    "annotate": {
+     "type": "boolean"
+    },
+    "id": {
+     "type": "integer"
+    }
+   },
+   "type": "object"
+  },
+  "name": "screenshot"
+ }
+]

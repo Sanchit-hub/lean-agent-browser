@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.7.0 (2026-11-18): source-level audit, cycle 002
+
+Every public call was traced from MCP to the engine and tested against fixtures built to break it. Findings,
+threat model and engine/security matrix: `docs/audits/cycle-002.md`. Claim-by-claim status:
+`docs/PRODUCT_TRUTH.md` (renamed from `BASELINE.md`, now with a truth ledger).
+
+**`expect=` no longer accepts stale or negated evidence** (P0). For clicks, key presses and submits, where
+`expect=` is the evidence (field actions are verified by the field's own state, and `expect=` just has to hold):
+- Text that was already on the page before the action ("Saved 2 minutes ago") no longer verifies
+  `expect="Saved"`. The text has to appear more often than before.
+- "Draft not saved" no longer satisfies `expect="saved"`. Occurrences after not, never, n't, un- or "failed to"
+  don't count.
+- `expect="url:..."` needs the URL to change or to newly contain the part.
+- An action that opens a new tab checks `expect=` in that tab instead of reporting `verified`.
+
+**Other fixes**
+- A submit that lands on an error page in another language (e.g. "Fehler") is `blocked`, not `verified`. Common
+  error words in ten languages are recognised; success words are still English only.
+- Concurrent Python API calls (`asyncio.gather` on one `LeanBrowser`) mixed pages up. Calls are now serialized,
+  as the MCP server already did.
+- An engine crash mid-session now gives a clear error ("the obscura engine closed or crashed; call open(url) …")
+  instead of `TargetClosedError`. The next `open` falls back to Chromium visibly.
+
+**Tests**
+- `tests/test_contract.py`: the live MCP schemas must match `tests/contract/mcp_tools.json`; invalid calls are
+  errors and the server survives; stdout carries only JSON-RPC; two servers don't share state; concurrent calls
+  get their own pages.
+- Verification suite: 6 `expect=` cases and a non-English error case on both engines; engine-crash test.
+
+**Compatibility:** schemas, CLI and config are unchanged. Some `expect=` results that used to say `verified`
+now say `unverified`, because they were overclaims.
+
 ## 0.6.0 (2026-11-18): no false success, and a network guard that sees redirects
 
 **Verification honesty (release-blocking defects fixed)**
@@ -74,7 +106,7 @@ failure was the ARIA checkbox bug above, fixed and rerun 3/3 (`evals/results/202
 - README starts with Install for Claude Code, First task and Develop / contribute. The `memory` tool is in
   the tools table, and the outdated "private repository" note is gone.
 - New: `docs/TROUBLESHOOTING.md`, `docs/UPGRADING.md`, `docs/RELEASING.md` (release checklist, Claude Code
-  acceptance test, first-time user test), `docs/BASELINE.md`; issue and PR templates.
+  acceptance test, first-time user test), `docs/PRODUCT_TRUTH.md`; issue and PR templates.
 - Security docs say plainly that Playwright runs Chromium with its own sandbox off, and that dropping hidden
   text does not prevent prompt injection.
 

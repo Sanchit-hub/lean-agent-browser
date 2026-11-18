@@ -30,7 +30,12 @@ with `submit`): `verified` needs one of
   "unsuccessful" count as errors),
 - the clicked control went away or the form was cleared, unless the page shows a new "Processing…"-style
   text,
-- the caller's `expect=` postcondition.
+- the caller's `expect=` postcondition, with fresh evidence only (for field actions, `expect=` is an extra
+  condition that just has to hold afterwards):
+  - text must appear more often than it did before the action, and not as "not <text>" / "un<text>",
+  - `url:` must newly match,
+  - `gone:` needs an element that existed before.
+  After a new tab opens, the expectation is checked in that tab.
 
 Otherwise:
 - New error text, field errors or HTTP ≥ 400 make it `blocked`.
@@ -41,6 +46,9 @@ Otherwise:
 **Before a submit is dispatched**, the form's own validation (required, email, minlength, pattern) is checked.
 If it fails, the submit is not sent and the status is `blocked` with the fields and messages. Chromium would
 silently refuse that submit; Obscura doesn't validate forms at all and would have sent it.
+
+**Error words** are mostly English, plus common ones in German, French, Italian, Spanish, Portuguese,
+Russian, Chinese, Japanese, Korean and Hindi. Success words are English only.
 
 **Other clicks**: `verified` if the page changed. This is weaker evidence: a page that changes on its own can
 make an unrelated click look verified. Pass `expect=` when it matters.
@@ -71,13 +79,15 @@ Limit: if `HTTP(S)_PROXY` is set in the environment, the guard proxy is off and 
 
 | Area | Code | Tests |
 |---|---|---|
-| Verification honesty: 19 cases × 2 engines, false-verified must be 0 | `session.py` `_signals`, `_status`, `_after` | `tests/test_verification.py`, `scripts/verification_matrix.py` (repeated runs; weekly `reliability.yml`) |
+| Verification honesty: 21 action cases + 6 `expect=` cases × 2 engines, false-verified must be 0 | `session.py` `_signals`, `_status`, `_after` | `tests/test_verification.py`, `scripts/verification_matrix.py` (repeated runs; weekly `reliability.yml`) |
 | Outcomes on real flows: rejected login, server rejection, slow submit, `expect=` | `session.py` | `tests/test_reliability.py` |
 | Duplicate guard, retry-safety classes, dry run | `session.py` `act`, `fill_form`, `retry_safety` | `tests/test_reliability.py` |
 | Recovery after re-render, reordered lists | `session.py` `_resolve_or_recover`, `_perform_guarded` | `tests/test_reliability.py`, `tests/test_session.py` |
 | Private network: URL check, both engines, redirect hops | `tools.py`, `engine.py` `_route`, `netguard.py` | `tests/test_engine.py`, `tests/test_tools.py` |
 | Uploads limited to allowed folders | `session.py` `_perform` (resolved path) | `tests/test_session.py` |
 | Trace redaction | `trace.py` | `tests/test_trace.py` |
+| MCP contract, invalid calls, stdout purity, isolation, concurrency | `mcp_server.py`, `tools.py` | `tests/test_contract.py` |
+| Engine crash mid-session | `tools.py`, `engine.py` | `test_engine_crash_mid_session_is_explained_and_recoverable` |
 | Agent-level outcomes (server-checked, 100 tasks) | — | `evals/` (needs `claude -p`) |
 
 ## Known gaps
