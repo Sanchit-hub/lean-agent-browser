@@ -10,12 +10,12 @@ Status is one of: **verified** (a test or recorded run proves it), **partial** (
 | Claim | Implementation | Evidence | Status | Risk |
 |---|---|---|---|---|
 | Compact snapshots with stable ids, collapsed groups, find/expand | `snapshot.js`, `snapshot.py` | `tests/test_snapshot.py` (both engines) | verified | low |
-| `verified` means the page shows evidence the outcome happened | `session.py` `_signals`, `_status`, `_after` | `tests/test_verification.py`; `scripts/verification_matrix.py` 1,400 runs on `b539371`: 0 false verified, 0 false unverified | verified on the suite (incl. 23 red-team cases); success/error words in English plus ten common languages | medium |
+| `verified` means the page shows evidence the outcome happened | `session.py` `_signals`, `_status`, `_after` | `tests/test_verification.py`; `scripts/verification_matrix.py` 1,400 runs on `b539371`: 0 false verified, 0 false unverified | verified on the suite (incl. 24 red-team cases); success/error words in English plus ten common languages | medium |
 | `expect=` postconditions need new, non-negated evidence | `session.py` `_expect_pre`, `_check_expect`, `EXPECT_COUNT_JS` | `test_expect_needs_fresh_unnegated_evidence` (5 cases × 2 engines) | verified | low |
 | Form validation is checked before a submit (Obscura doesn't validate) | `session.py` `FORM_INVALID_JS`, `_form_invalid` | `html5-required` case | verified | low |
 | Submits, payments and deletes are never retried automatically | `session.py` `_perform_guarded`, `retry_safety` | `test_slow_submit_times_out_honestly_and_is_not_repeated`, `test_retry_safety_classes` | verified | low |
-| Repeating an unsafe action is blocked unless `value="repeat"` | `session.py` `act` (`_unsafe_log`), `fill_form` | `test_duplicate_*` | partial: per session and page; not across sessions or restarts | medium |
-| With `key=`, the duplicate guard holds across pages, sessions and restarts (24 h, this machine) | `action_keys.py`, `session.py` `act`, `fill_form` | `test_action_key_*` | verified; only for calls that pass the same key | low |
+| Repeating an unsafe action is blocked unless `value="repeat"` | `session.py` `act` (`_unsafe_log`), `fill_form` | `test_duplicate_*` | partial: without `key=`, per session and page (with `key=`: next row) | medium |
+| With `key=`, the duplicate guard holds across pages, sessions and restarts (24 h, this machine) | `action_keys.py`, `session.py` `act`, `fill_form` | `test_action_key_*`, `test_one_key_across_two_servers_sends_once` (claimed atomically before dispatch) | verified; only for calls that pass the same key | medium |
 | Re-rendered targets are re-found only on an unambiguous, non-contradicting match | `session.py` `_resolve_or_recover` | `test_conditional_action_retried_once_after_rerender`, `test_reordered_list_keeps_ids_with_their_rows`, `rerender` task | verified | low |
 | `dry_run` dispatches nothing | `session.py` `act`, `fill_form` | `test_dry_run_*`, clean-install MCP round trip | verified | low |
 | Private network blocked on both engines, including redirect hops | `tools.py` `_check_domain`, `engine.py` `_route`, `netguard.py` | `test_redirect_to_private_address_is_blocked[both]`, `test_private_network_*`, `test_netguard_refuses_private_targets` `tests/test_netguard.py` (DNS rebinding, behind the user's proxy) | verified (socks proxies turn the guard off) | high |
@@ -30,7 +30,7 @@ Status is one of: **verified** (a test or recorded run proves it), **partial** (
 | Supported platforms: macOS arm64, Ubuntu 24.04 x86_64 and arm64 | CI matrix | `ci.yml` runs | verified | low |
 | Fewer tokens than Playwright MCP | `evals/` | 100 fixture tasks × 3 runs (`docs/benchmark.md`) | partial: our own fixture tasks only, not real sites | medium |
 | Chromium runs inside its own OS sandbox where the host allows it | `engine.py` `_chromium_context` (sandboxed launch, fallback with a note), `doctor.py` `check_chromium_sandbox` | `test_chromium_tries_its_os_sandbox_and_reports_it`, `test_chromium_falls_back_without_os_sandbox` | verified on macOS; partial on Linux: off where user namespaces are restricted (doctor WARN) | medium |
-| Pages in other languages | `ERROR_RE` has common error words in several languages | `nav-error-german`, `success-*`, `negated-*` cases | partial: success and error words in ten common languages (German, French, Italian, Spanish, Portuguese, Russian, Chinese, Japanese, Korean, Hindi); others end `unverified`; `expect=` negation is English-only | medium |
+| Pages in other languages | `ERROR_RE` has common error words in several languages | `nav-error-german`, `success-*`, `negated-*` cases | partial: success and error words in ten common languages (German, French, Italian, Spanish, Portuguese, Russian, Chinese, Japanese, Korean, Hindi); others end `unverified`; `expect=` negation covers the same languages | medium |
 | Exactly-once execution on arbitrary websites | — | — | not supported, not claimed | — |
 
 ## Release state
@@ -116,6 +116,9 @@ only the older 18-task, 1-run result. Every task was written by the project auth
 | Doctor printed free text; "Obscura not installed" still ended in "all good" | per-check PASS/WARN/FAIL/NOT SUPPORTED, warnings counted in the summary |
 
 ## Known gaps (not done)
+
+- The 100-task agent benchmark was last run on v0.6.0. v0.7.0 and v0.8.0 changed what counts as `verified`;
+  the verification matrix and tests cover that, but agent-level success and tokens on v0.8.0 are unmeasured.
 
 - Not on PyPI. The release workflow is ready; trusted publishing has to be set up by the maintainer.
 - No first-time user test by people outside the project yet (protocol in `docs/RELEASING.md`).
