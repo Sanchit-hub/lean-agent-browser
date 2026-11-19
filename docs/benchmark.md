@@ -76,6 +76,16 @@ Lean used fewer tokens than Playwright MCP on **all 100 tasks**. The per-task ra
 | Frames & shadow DOM | 6 | 9,393 | 46,606 | 5.0× |
 | Multi-step flows | 6 | 25,845 | 91,647 | 3.5× |
 
+### Rerun on v0.8.0
+
+v0.7.0 and v0.8.0 tightened what counts as `verified` again (fresh `expect=` evidence, plain-text errors,
+error routes, standing headings, timer-aware field and toast checks), so Lean was rerun once on all 100 tasks
+(2026-11-20, `evals/results/20261120-032626-claude-cli/`): **100/100**, median 13,409 tokens, p95 30,202, 5.0
+steps, 11.0 s. Against the v0.6.0 rerun (99/100, 13,110 / 28,356, 5.1 steps, 12.0 s) that is within single-run
+noise. Action statuses across all 100 tasks barely moved (verified 185 vs 188, unverified 15 vs 15, blocked 5 vs
+5), so the stricter rules did not make the agent see more honest successes as unverified. One run, our own
+fixture tasks.
+
 ### Rerun after v0.6.0's verification changes
 
 v0.6.0 changed what counts as `verified` (see `docs/RELIABILITY.md`), so Lean was rerun once on all 100 tasks
@@ -105,6 +115,7 @@ six failures were real bugs, all fixed before the full run:
 | `hidden-price` rerun after the fixture fix | `evals/results/20261116-021951-claude-cli/` |
 | agent-browser × 1, 18 original tasks, sequential (reported) | `evals/results/20261115-021309-claude-cli/` |
 | agent-browser 100-task attempt (invalid, not reported) | `evals/results/20261116-022027-claude-cli/` |
+| v0.8.0 rerun, Lean × 1, 100 tasks | `evals/results/20261120-032626-claude-cli/` |
 | v0.6.0 rerun, Lean × 1, 100 tasks | `evals/results/20261118-040843-claude-cli/` |
 | v0.6.0 `waitlist` rerun after the ARIA checkbox fix, Lean × 3 | `evals/results/20261118-041748-claude-cli/` |
 | Pilot (80 new tasks × 1) | `evals/results/20261116-012329-claude-cli/` |

@@ -45,7 +45,6 @@ Claim-by-claim status: `docs/PRODUCT_TRUTH.md`. Open engineering backlog: `docs/
 2. **PyPI (maintainer decision):** set up trusted publishing, run the release workflow to TestPyPI, then publish a
    GitHub Release; switch the README to `pipx install lean-agent-browser`.
 3. **Benchmark next steps:**
-   - rerun the 100-task benchmark on v0.8.0 (last full run: v0.6.0), since what counts as `verified` changed
    - tasks written by someone other than us, and a few real-site workflows with sandbox accounts
    - 3 runs for agent-browser (it has 1), and its CLI workflow as a separate row
    - false-success and false-recovery counters

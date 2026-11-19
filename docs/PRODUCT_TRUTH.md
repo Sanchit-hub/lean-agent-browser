@@ -97,6 +97,9 @@ Skipped tests are listed by `pytest -rs`. They are conditional: the real-Claude-
 
 ## Benchmark evidence
 
+- v0.8.0, Lean × 1 on all 100 fixture tasks (2026-11-20): 100/100, median 13,409 tokens, p95 30,202; action
+  statuses unchanged from v0.6.0 (`evals/results/20261120-032626-claude-cli/`, `docs/benchmark.md`).
+
 100 fixture tasks × 3 runs: Lean 300/300 (median 13,181 tokens), Playwright MCP 300/300 after one fixture
 correction (46,946). Raw files are in `evals/results/20261116-014739-claude-cli/` and
 `evals/results/20261116-021951-claude-cli/`; method and caveats are in `docs/benchmark.md`. agent-browser has
@@ -117,8 +120,6 @@ only the older 18-task, 1-run result. Every task was written by the project auth
 
 ## Known gaps (not done)
 
-- The 100-task agent benchmark was last run on v0.6.0. v0.7.0 and v0.8.0 changed what counts as `verified`;
-  the verification matrix and tests cover that, but agent-level success and tokens on v0.8.0 are unmeasured.
 
 - Not on PyPI. The release workflow is ready; trusted publishing has to be set up by the maintainer.
 - No first-time user test by people outside the project yet (protocol in `docs/RELEASING.md`).
