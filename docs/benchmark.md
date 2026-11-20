@@ -138,8 +138,9 @@ Only a full run (all fixture tasks, 3+ runs) replaces `evals/report.md`.
 
 ## What this does and doesn't show
 
-- **It does show** that on these 100 tasks, with this agent, Lean completed everything Playwright MCP did,
-  with about a quarter of the tokens and fewer turns.
+- **It does show** that on these 100 tasks, with this agent, Lean (v0.4.0) completed everything Playwright MCP
+  did, with about a quarter of the tokens and fewer turns (3 runs each, 2026-11-16). Playwright MCP has not been
+  rerun since; Lean alone was rerun once on v0.6.0 and once on v0.8.0, at similar token counts.
 - **It doesn't show** that Lean works on every website. We wrote every task ourselves, on a local fixture site
   built to cover common patterns. Real sites have bot checks, logins and layouts we didn't model.
 - A read-only real-site canary (`scripts/canary.py`, weekly in `canary.yml`; see `docs/RELIABILITY.md`)

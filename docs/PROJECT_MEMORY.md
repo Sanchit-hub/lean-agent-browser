@@ -24,8 +24,9 @@ verified against evidence, safe recovery. Token efficiency stays an advantage; r
   limit); agent-browser must run sequentially and costs 0.15–1M tokens per task.
 - Older 18-task result (v0.2): Lean 54/54 at 11.6k, Playwright MCP 54/54 at 48.6k, agent-browser 17/18 at 146k.
 
-- **Tool-definition cost per request** (measured with `claude -p`): lean ~1.55k tokens, Playwright MCP
-  ~7.1k, agent-browser ~31.6k.
+- **Tool-definition cost per request** (measured with `claude -p`): lean ~1.72k tokens since v0.8.0 added the
+  optional `key` (was ~1.55k on 2026-11-15, ~1.65k before `key`), Playwright MCP ~7.1k, agent-browser ~31.6k
+  (those two measured 2026-11-15).
 - **Snapshot speed on Obscura:** GitHub repo page ~90 ms, after switching to `checkVisibility()`.
 - **Live suite** (5 public pages, 1 run each): Playwright MCP 5/5 with 134.6k tokens, lean 5/5 with
   49.4k tokens. Lean's Halley task first hung; that was fixed, see below.

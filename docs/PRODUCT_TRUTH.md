@@ -37,7 +37,9 @@ Status is one of: **verified** (a test or recorded run proves it), **partial** (
 
 | Item | Value | Source |
 |---|---|---|
-| Version | 0.7.0 (`lean_browser.__version__`, the only version source; `pyproject.toml` reads it) | `leanb --version` |
+| Version | 0.8.0 (`lean_browser.__version__`, the only version source; `pyproject.toml` reads it) | `leanb --version` |
+| Tags | `v0.5.0`, `v0.6.0`, `v0.7.0`, `v0.8.0` (`v0.8.0` on `6cd2f0d`; `pip install` from it gives `leanb 0.8.0`) | `git tag` |
+| GitHub Releases | none (held until the first-time user test) | `gh api .../releases` |
 | Before this baseline | `main` at `575c6bf` (v0.4.0); no git tags and no GitHub Releases existed | `git tag`, `gh api .../releases` |
 | Repository | public, Apache-2.0 | `gh repo view` |
 | PyPI | not published | |
@@ -81,7 +83,10 @@ Status is one of: **verified** (a test or recorded run proves it), **partial** (
 | Clean-install test, macOS arm64 (local) | passed: wheel contents, venv path with a space, `setup --yes`, doctor 9/9 PASS, `doctor --json`, MCP round trip |
 | pipx install of the checkout (local, PIPX_HOME with a space) | `leanb --version` 0.5.0, doctor all PASS, install kind `pipx` |
 | Real Claude Code CLI 2.1.322, throwaway HOME | register, no duplicate, update a stale entry, unrelated server kept, uninstall removes only `lean-browser` |
-| Verification suite, 70 cases × 2 engines × 10 runs, after the timing fix | 380 true verified, 1,020 correctly unverified: 0 false verified, 0 false unverified; **p50 1.10 s, p95 4.15 s** |
+| CI (3 platforms), commit `3bfe8d0` (CI #58, latest `main` at this audit) | green: macOS 15, Ubuntu 24.04 x86_64 and arm64 |
+| CI (3 platforms), commit `6cd2f0d` (CI #56, tag `v0.8.0`) | green |
+| Full suite, macOS arm64 (local), `2593515` (v0.8.0 code) | 663 passed, 5 skipped, 1 xfailed (Obscura WebSocket stub), 11 min 12 s |
+| Verification suite, 70 cases × 2 engines × 10 runs, after the timing fix (`2593515`) | 380 true verified, 1,020 correctly unverified: 0 false verified, 0 false unverified; **p50 1.10 s, p95 4.15 s** |
 | Verification suite, 70 cases (incl. 24 red-team) × 2 engines × 10 runs (`b539371`) | **380 true verified, 1,020 correctly unverified: 0 false verified, 0 false unverified, 0 setup errors, known-gap list empty**; p50 1.89 s (was 1.14 s: the new evidence checks), p95 6.16 s |
 | Verification suite, 69 cases (incl. 23 red-team) × 2 engines × 10 runs (`ffa68a0`) | 360 true verified, 1,000 correctly unverified, 0 false unverified, 0 setup errors; 20 false verified, all from the one documented known gap `rt-fill-reverted-late`; p50 1.14 s, p95 6.18 s |
 | Verification suite, 27 cases × 2 engines × 10 runs (v0.7.0) | 0 false verified, 0 false unverified in 540 runs |
