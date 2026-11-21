@@ -19,16 +19,13 @@ that are verified against evidence, and safe recovery when pages change.**
 | **You need** | Python 3.12+, [pipx](https://pipx.pypa.io), [Claude Code](https://claude.com/claude-code), git, and internet access for a one-time engine download (~700 MB on disk) |
 | **Linux only** | `sudo apt install bubblewrap`. Without it Obscura stays off and Chromium serves every page |
 
-Lean is not on PyPI yet. Until it is, install a tagged release straight from GitHub (a preview of the
-final `pipx install lean-agent-browser`):
+Lean is not on PyPI yet. For the current tested preview, copy and paste this **one command**. It installs Lean and starts guided setup:
 
 ```bash
-pipx install "git+https://github.com/Sanchit-hub/lean-agent-browser@v0.8.0"
+pipx install "git+https://github.com/Sanchit-hub/lean-agent-browser@aac7e05681c6c95413f1d7e579ebc0c82459eb70" && leanb setup
 ```
 
-```bash
-leanb setup
-```
+This is pinned to the latest tested commit so everyone installing from this page gets the same build. It requires the Python, pipx, Git, and Claude Code listed above; setup asks before downloading browser engines or changing Claude Code.
 
 `leanb setup` asks before it changes anything. It:
 1. checks that your platform is supported,
