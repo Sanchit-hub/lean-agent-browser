@@ -1,0 +1,98 @@
+{
+  "run": "20261121-232833-claude-cli-live",
+  "model": "claude-sonnet-5-5 via claude -p",
+  "tasks": [
+    "live-python-designer",
+    "live-halley",
+    "live-obscura-license",
+    "live-example-link",
+    "live-httpbin-form",
+    "live-books-price",
+    "live-books-travel",
+    "live-books-page2",
+    "live-books-links",
+    "live-quotes-love",
+    "live-quotes-js",
+    "live-quotes-scroll",
+    "live-ti-dropdown",
+    "live-ti-checkboxes",
+    "live-ti-loading",
+    "live-ti-confirm",
+    "live-ti-prompt",
+    "live-ti-tables",
+    "live-ti-hover",
+    "live-ti-add",
+    "live-ti-window",
+    "live-ti-frames",
+    "live-ti-iframe-editor",
+    "live-ti-controls",
+    "live-ti-enable",
+    "live-ti-shadow",
+    "live-ti-slider",
+    "live-ti-keys",
+    "live-ti-status",
+    "live-todomvc",
+    "live-wiki-search",
+    "live-hn-links"
+  ],
+  "runs": 1,
+  "modes": {
+    "lean": {
+      "success": 29,
+      "attempts": 32,
+      "median_total_tokens": 13575.0,
+      "p95_total_tokens": 188407,
+      "median_wall_s": 17.7,
+      "p95_wall_s": 34.1,
+      "failure_categories": {
+        "wrong_answer": 2,
+        "step_limit": 1
+      },
+      "tasks_solved_every_run": 29,
+      "mean_turns": 5.31,
+      "mean_wall_s": 20.17,
+      "failures": [
+        {
+          "task": "live-quotes-scroll",
+          "run": 1,
+          "category": "wrong_answer",
+          "reason": "answer missing ['george bernard shaw']"
+        },
+        {
+          "task": "live-ti-iframe-editor",
+          "run": 1,
+          "category": "wrong_answer",
+          "reason": "answer missing ['your content goes here']"
+        },
+        {
+          "task": "live-todomvc",
+          "run": 1,
+          "category": "step_limit",
+          "reason": "answer missing ['2']"
+        }
+      ]
+    },
+    "playwright-mcp": {
+      "success": 31,
+      "attempts": 32,
+      "median_total_tokens": 25870.5,
+      "p95_total_tokens": 47302,
+      "median_wall_s": 14.9,
+      "p95_wall_s": 19.2,
+      "failure_categories": {
+        "wrong_answer": 1
+      },
+      "tasks_solved_every_run": 31,
+      "mean_turns": 3.69,
+      "mean_wall_s": 14.69,
+      "failures": [
+        {
+          "task": "live-quotes-scroll",
+          "run": 1,
+          "category": "wrong_answer",
+          "reason": "answer missing ['george bernard shaw']"
+        }
+      ]
+    }
+  }
+}

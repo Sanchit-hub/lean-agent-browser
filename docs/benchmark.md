@@ -40,7 +40,58 @@ checks that each solution passes and that an empty run fails.
 - Integration mode: all three tools are compared **as MCP servers**. Vercel agent-browser is designed
   mainly as a CLI; we used its MCP `core` tool profile, which is labeled in every table.
 
-## Results (2026-11-16, v0.4.0)
+## Results (2026-11-22, `main` after v0.8.0 and the real-site hardening)
+
+Same 100 tasks, model, prompts and setup as the v0.4.0 baseline below; both tools rerun 3 times on the same day
+(`evals/results/20261122-012443-claude-cli/`). Lean was at commit `6f60a47`; Playwright MCP is still 0.0.83.
+
+| Tool | Runs | Success | Solved every run | Median tokens per task | Mean tokens per task | Tokens per successful task | p95 tokens | Mean turns | Median time |
+|---|---|---|---|---|---|---|---|---|---|
+| **Lean Agent Browser** | 3 | **300/300** ‡ | **100/100** ‡ | **13,505** | **15,841** | **15,841** ‡ | **30,534** | **5.1** | **11.7 s** |
+| Playwright MCP 0.0.83 | 3 | 300/300 | 100/100 | 46,997 | 53,888 | 53,888 | 96,750 | 6.9 | 17.3 s |
+
+‡ As run, Lean was 297/300 (16,001 tokens per successful task). All three failures were the benchmark's fault,
+not Lean's. The runs shared one action-key store (`~/.lean-browser/action_keys.json`), so a `key` the agent picked
+in run 1 (`giftcard-sneha-1000`, `brochure-tara`, `review-chai-1`) correctly blocked the same submit in run 3,
+and the agent then answered "done". The driver now gives every run its own `LEANB_STATE_DIR`. The three tasks
+were rerun 3× with that fix: 9/9 (`evals/results/20261122-015654-claude-cli/`). Both folders are published.
+
+Browser tool calls (Lean, from its traces): 1,225 in 300 runs, 4.1 per task (v0.4.0: 1,218). Action statuses
+across them: verified 562, unverified 49, blocked 26, done 20 (v0.4.0: 563, 53, 15, 19). Playwright MCP's tool
+calls aren't recorded by this harness. Per-run medians: Lean 13,437 / 13,518 / 13,531; Playwright MCP 46,989 /
+47,001 / 46,997.
+
+**What changed since v0.4.0:**
+- Success: the same (300/300 for both once the harness fix is applied).
+- Lean's tokens went **up a little**, not down: median +2.5% (13,181 → 13,505), mean +3.6%, per-task median
+  change +2.7%. The three new per-run medians all sit above the three old ones (13,158–13,378), so this is a
+  small real increase, not noise. Likely causes: the tool schemas grew (~1.65k → ~1.76k tokens per request, measured with
+  `claude -p`, for `key`, `dblclick` and the extract `url` hint) and results now carry more evidence. It is inside the 10%
+  release gate.
+- Turns, tool calls and time are unchanged (5.07 → 5.10 turns, 11.6 → 11.7 s median).
+- Playwright MCP is unchanged too (median 46,946 → 46,997).
+- Lean still used fewer tokens than Playwright MCP on **all 100 tasks**: per-task ratio 1.06× to 8.3×,
+  median 3.75×; 3.5× on the overall median.
+
+## Live suite: 51 real-site tasks (2026-11-22, reported separately)
+
+`evals/live_tasks.py`: read-and-interact tasks on public pages, mostly sites built for automation practice
+(books.toscrape.com, quotes.toscrape.com, the-internet.herokuapp.com, uitestingplayground.com, demoqa.com) plus
+Wikipedia, GitHub, Hacker News, httpbin and TodoMVC. No logins, payments or real accounts. Success is judged
+from the final answer against known values, one run each.
+
+| Run | Lean | Playwright MCP |
+|---|---|---|
+| First runs, before the hardening fixes (32 + 19 tasks) | 47/51 † | 51/51 † |
+| After the fixes (`evals/results/20261122-012035-claude-cli-live/`) | **51/51**, median 12,699 tokens, 4.1 turns | not rerun |
+
+† One task (`live-quotes-scroll`) failed for both tools because our expected answer was wrong; it is counted
+as passed here and the task is corrected. Lean's four real failures (TodoMVC, a TinyMCE editor, a double-click
+and a hover-replaced link) and its two very expensive link tasks (121k and 188k tokens, now ~10k and ~12k) led
+to the fixes in `CHANGELOG.md` (Unreleased). One run per task on live pages: treat it as a smoke test that found
+bugs, not a measurement. Don't compare it with the fixture numbers.
+
+## Results (2026-11-16, v0.4.0, the documented baseline)
 
 | Tool | Runs | Success | Tasks solved every run | Median tokens per task | p95 tokens | Mean turns | Median time |
 |---|---|---|---|---|---|---|---|
@@ -111,6 +162,10 @@ six failures were real bugs, all fixed before the full run:
 
 | Run | Folder |
 |---|---|
+| `main` after hardening, Lean + Playwright MCP × 3, 100 tasks | `evals/results/20261122-012443-claude-cli/` |
+| Its three key-collision tasks rerun with per-run state, Lean × 3 | `evals/results/20261122-015654-claude-cli/` |
+| Live suite, 51 tasks, Lean, after the fixes | `evals/results/20261122-012035-claude-cli-live/` |
+| Live suite first runs and reruns (before and during the fixes) | `evals/results/20261121-232833-claude-cli-live/`, `20261121-234655-…`, `20261122-000810-…`, `20261122-002129-…` |
 | Full run, Lean + Playwright MCP × 3 | `evals/results/20261116-014739-claude-cli/` |
 | `hidden-price` rerun after the fixture fix | `evals/results/20261116-021951-claude-cli/` |
 | agent-browser × 1, 18 original tasks, sequential (reported) | `evals/results/20261115-021309-claude-cli/` |
@@ -138,16 +193,17 @@ Only a full run (all fixture tasks, 3+ runs) replaces `evals/report.md`.
 
 ## What this does and doesn't show
 
-- **It does show** that on these 100 tasks, with this agent, Lean (v0.4.0) completed everything Playwright MCP
-  did, with about a quarter of the tokens and fewer turns (3 runs each, 2026-11-16). Playwright MCP has not been
-  rerun since; Lean alone was rerun once on v0.6.0 and once on v0.8.0, at similar token counts.
+- **It does show** that on these 100 tasks, with this agent, Lean completed everything Playwright MCP did, with
+  a bit over a quarter of the tokens and fewer turns: 3 runs each on 2026-11-16 (v0.4.0) and again on 2026-11-22
+  (`main` after v0.8.0). Lean's own tokens rose about 2.5% between those runs.
 - **It doesn't show** that Lean works on every website. We wrote every task ourselves, on a local fixture site
   built to cover common patterns. Real sites have bot checks, logins and layouts we didn't model.
 - A read-only real-site canary (`scripts/canary.py`, weekly in `canary.yml`; see `docs/RELIABILITY.md`)
   checks that about 10 public pages still open and respond on both engines. It is a smoke check, not an
   agent benchmark, and no tokens are counted.
-- Both tools reached 100%, so this suite no longer separates them on success. Harder tasks, tasks written by
-  other people, and real-site workflows are the next step (see `ROADMAP.md`).
+- Both tools reached 100%, so this suite no longer separates them on success. The 51-task live suite is a first
+  step toward real sites; tasks written by other people and workflows with sandbox accounts are next (see
+  `ROADMAP.md`).
 - agent-browser has only the older 18-task, 1-run result. A valid 100-task run needs a sequential run and
   a lot of subscription usage (about 0.15–1M tokens per task).
 

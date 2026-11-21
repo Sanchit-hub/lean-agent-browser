@@ -1,5 +1,27 @@
 # Eval changelog
 
+## 2026-11-22 (`main` after v0.8.0 and real-site hardening): 100 tasks, both tools × 3; live suite 51 tasks
+
+Same tasks, model (Claude Sonnet 5.5 via `claude -p`), prompts and setup as 2026-11-16, 5 agents in parallel.
+Lean at `6f60a47`; Playwright MCP 0.0.83. Folder `20261122-012443-claude-cli/`.
+
+| Mode | Success | Tasks solved every run | Median total tokens | p95 total tokens | Mean turns | Median time |
+|---|---|---|---|---|---|---|
+| **Lean** | **300/300** (297/300 as run) | **100/100** | **13,505** | **30,534** | **5.1** | **11.7 s** |
+| Playwright MCP 0.0.83 | 300/300 | 100/100 | 46,997 | 96,750 | 6.9 | 17.3 s |
+
+- **Harness fault, fixed.** Lean's three failures were a shared action-key store across runs: a `key` from run 1
+  correctly blocked the same submit in run 3. Each run now gets its own `LEANB_STATE_DIR`; the three tasks reran
+  3× with it, 9/9 (`20261122-015654-claude-cli/`).
+- **Tokens.** Lean's median rose 2.5% (13,181 → 13,505; per-run medians 13,437–13,531 vs 13,158–13,378), mostly
+  larger tool schemas (~1.65k → ~1.76k tokens per request). Not a reduction; inside the 10% gate. Lean used
+  fewer tokens than Playwright MCP on all 100 tasks (per-task 1.06× to 8.3×, median 3.75×).
+- **Tool calls and statuses (Lean traces).** 1,225 calls (v0.4.0: 1,218); verified 562, unverified 49, blocked
+  26, done 20 (v0.4.0: 563, 53, 15, 19).
+- **Live suite** (separate, answer-checked, 1 run): 51 tasks on public pages. Lean's first runs 47/51 (Playwright
+  MCP 51/51, after correcting one expected answer that both "failed"); after the fixes Lean 51/51, median 12,699
+  tokens (`20261122-012035-claude-cli-live/`). See `docs/benchmark.md`.
+
 ## 2026-11-16 (v0.4.0): 100-task fixture suite
 
 80 new tasks (`evals/bench/`) joined the original 20. Claude Sonnet 5.5 via `claude -p`, 3 runs per tool,

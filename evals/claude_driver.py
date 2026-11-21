@@ -57,8 +57,13 @@ def mcp_config(mode: str, tmp: Path, trace_dir: Path | None = None) -> tuple[Pat
         cfg = tmp / "lean.toml"
         cfg.write_text(f'allow_private_network = true\nallowed_upload_dirs = ["{tmp.resolve()}"]\n')
         server = {"command": str(ROOT / ".venv/bin/leanb"), "args": ["--config", str(cfg), "mcp"]}
+        # Each run is a new user: its own action-key store. Shared, a key the agent chose in run 1 ("giftcard-sneha")
+        # correctly blocked the same submit in run 3, which scored as a failure (3 runs on 2026-11-22).
+        state = tmp / f"state-{time.time_ns()}"
+        state.mkdir(parents=True, exist_ok=True)
+        server["env"] = {"LEANB_STATE_DIR": str(state)}
         if trace_dir:  # every lean run leaves a trace next to the results (leanb trace list --dir ...)
-            server["env"] = {"LEANB_TRACE": "1", "LEANB_TRACE_DIR": str(trace_dir)}
+            server["env"].update({"LEANB_TRACE": "1", "LEANB_TRACE_DIR": str(trace_dir)})
         name = "lean"
     elif mode == "agent-browser":
         # Same Chrome for Testing build as the other modes; a fresh named session per run.

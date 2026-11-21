@@ -1,5 +1,41 @@
 # Changelog
 
+## Unreleased (on `main`, not tagged): real-site hardening
+
+A first-time install from the README and 51 tasks on real public sites (automation sandboxes such as
+books.toscrape.com, the-internet.herokuapp.com, uitestingplayground.com and demoqa.com, plus Wikipedia, Hacker
+News and TodoMVC) found problems that the fixture suite did not; the changes below fix them, each with a
+regression test. Lean's first runs passed 47 of the 51 tasks (a 48th failed for both tools because our expected
+answer was wrong; corrected). After the fixes it passed 51/51 in one run, answers checked against known values,
+and the two link tasks dropped from 121k and 188k tokens to about 10k and 12k.
+
+- `extract(fields=["title", "url"])`: `url`, `link` or `href` fields return each row's absolute link address. Before
+  this, an agent asked for "titles and links" clicked every link to learn its address (25 turns on Hacker News,
+  now 4). Titles that a site cuts on screen ("A Light in the ...") come from the link's full `title`; lists in
+  `nav`/`aside` lose to lists in the content; `within=` an id inside one item widens to the whole list.
+- The snapshot header names the site (`url: https://host/path`) on the first snapshot of each site.
+- Checkboxes, radios and file inputs that are transparent themselves (the usual custom-control pattern, e.g.
+  TodoMVC) are listed; before this, whole todo rows were invisible. A checkbox with an unlinked `<label>` right
+  beside it is named by that label. Anything inside a transparent container stays hidden.
+- A `<header>`/`<footer>` inside an article, section or main is content, not page chrome (TodoMVC's
+  "2 items left"). Read mode reads the section around a small `<main>` and keeps inline-only blocks on one line.
+- `snapshot(find=)` searches the page's visible text when no element matches.
+- Rich-text editors whose srcdoc frame stays `visibility:hidden` until its script runs (TinyMCE) go to Chromium;
+  settle also waits for scripts and stylesheets a page adds after load.
+- `act(dblclick)`, with all the safety, retry and evidence rules of a click.
+- Elements with inline pointer handlers (`onmouseenter`, `onmousedown`, ...) are clickable, `<a>` without `href`
+  included. A click on an element that the page replaces with a clone on hover goes to the replacement; Obscura's
+  click sends the hover events first, as a real pointer does.
+- Native range inputs are set through the prototype setter, so React sees the change (before this, `fill` said
+  `verified (slider at 70)` while the page's own value box stayed at 25). On Obscura, arrow, page, Home and End
+  keys move a focused range.
+- When a click changes nothing in the element view but main-content text changed, the result shows that text
+  (`unverified (page text changed: "The link above clicked 2 times.")`). It is shown, never counted as proof.
+- Live suite: 46 new tasks (51 in all), reported separately from the fixture benchmark.
+- The MCP tool definitions grow from ~1,722 to ~1,755 tokens per request (`dblclick`, the extract `url` hint;
+  measured with `claude -p`). The 750 proxy-token schema budget still holds.
+- Eval driver: every run gets its own `LEANB_STATE_DIR`, so an action key from one run can't block the next.
+
 ## 0.8.0 (2026-11-19): red team, network guard behind proxies, cross-session duplicate guard
 
 A red-team pass found 15 realistic pages that got a false `verified`; all are fixed and stay in the suite. The

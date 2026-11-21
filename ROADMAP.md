@@ -35,7 +35,7 @@ Claim-by-claim status: `docs/PRODUCT_TRUTH.md`. Open engineering backlog: `docs/
 | Visual | `screenshot(annotate=true)` maps the image to ids | `session.py` |
 | Distribution and onboarding (v0.5) | `pipx install` from a GitHub tag; `leanb setup` (engines, doctor, Claude Code registration through `claude mcp`, asks first, idempotent); `leanb doctor` with PASS/WARN/FAIL/NOT SUPPORTED, `--json` and an MCP round trip; `leanb uninstall`; `install.sh` for contributors; CI on macOS 15, Ubuntu 24.04 x86_64 and arm64 with a clean-install test (wheel contents, spaced path, setup, doctor, MCP, pipx); release workflow with trusted publishing (not run yet) | `onboarding.py`, `doctor.py`, `claude_code.py`, `installer.py`, `scripts/smoke_clean_install.sh`, `.github/workflows/` |
 | Real-site canary | 10 public read-only pages on both engines, weekly and by hand on macOS and Linux | `scripts/canary.py`, `canary.yml` |
-| Benchmarks | Fixture suite of **100 tasks** in 9 categories, server-verified, each with a scripted reference solution; live suite (5 tasks); Lean vs Playwright MCP × 3 runs, agent-browser × 1; per-category success, tasks solved in every run, p95, failure categories; parallel runs (`--jobs`) | `evals/`, `evals/bench/`, `docs/benchmark.md` |
+| Benchmarks | Fixture suite of **100 tasks** in 9 categories, server-verified, each with a scripted reference solution; live suite of 51 real-site tasks (sandboxes, Wikipedia, Hacker News, TodoMVC), reported separately; Lean vs Playwright MCP × 3 runs, agent-browser × 1; per-category success, tasks solved in every run, p95, failure categories; parallel runs (`--jobs`) | `evals/`, `evals/bench/`, `docs/benchmark.md` |
 
 ## Next (in order)
 

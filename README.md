@@ -79,14 +79,15 @@ Page content is untrusted data, and localhost and LAN addresses are blocked unle
 
 ## How it compares
 
-| 100 tasks, same agent (Claude Sonnet 5.5) | Success | Median tokens per task | Mean turns | Median time |
+| 100 tasks, same agent (Claude Sonnet 5.5), 2026-11-22 | Success | Median tokens per task | Mean turns | Median time |
 |---|---|---|---|---|
-| Playwright MCP 0.0.83 (3 runs) | 300/300 * | 46,946 | 6.9 | 18.1 s |
-| **Lean Agent Browser (3 runs)** | **300/300** | **13,181** | **5.1** | **11.6 s** |
+| Playwright MCP 0.0.83 (3 runs) | 300/300 | 46,997 | 6.9 | 17.3 s |
+| **Lean Agent Browser (3 runs)** | **300/300** * | **13,505** | **5.1** | **11.7 s** |
 
-Lean used fewer tokens than Playwright MCP on every one of the 100 tasks: 3.9× fewer on the median task.
-The tasks cover forms, multi-step flows, reading, navigation, widgets, dialogs, frames, dynamic pages and
-safety. \* 297/300 as run; one fixture was corrected and rerun, see [`docs/benchmark.md`](docs/benchmark.md).
+Lean used fewer tokens than Playwright MCP on every one of the 100 tasks: 3.5× fewer at the median (per task, 1.06× to 8.3×). The
+tasks cover forms, multi-step flows, reading, navigation, widgets, dialogs, frames, dynamic pages and safety.
+\* 297/300 as run: in three runs a duplicate-guard key left over from an earlier run blocked a submit, a fault in
+the benchmark harness, now fixed; those three tasks reran 9/9. See [`docs/benchmark.md`](docs/benchmark.md).
 On the older 18-task suite, Vercel agent-browser 0.41.0 (MCP `core` profile, 1 run) scored 17/18 with a
 median of 146,314 tokens per task.
 
@@ -214,6 +215,12 @@ agent ──MCP / CLI / Python──▶  7 tools  ──▶  snapshot · act · 
   On Linux, Obscura runs only under bubblewrap; without it, Chromium serves every page.
 - The benchmark is 100 fixture tasks we wrote ourselves, on a local test site. It measures these tasks, not
   every website, and it is not proof against every browser agent. See [`docs/benchmark.md`](docs/benchmark.md).
+- Real sites: a separate live suite of 51 read-and-interact tasks on public pages (mostly automation sandboxes,
+  plus Wikipedia, Hacker News and TodoMVC) passes 51/51 in one run. Logins, payments, CAPTCHAs and other
+  anti-bot pages are not part of it, and real sites change. See [`docs/benchmark.md`](docs/benchmark.md).
+- On real sites Obscura opens pages more slowly than Chromium: about 4.4 s against 2.1 s per page on six popular
+  sites (Wikipedia, python.org, MDN, GitHub, rust-lang.org, Hacker News; macOS, 2026-11-22). On the local
+  fixture site it is fast. `prefer = "chromium"` in `~/.lean-browser/config.toml` uses Chromium first.
 - Verification is heuristic: success and error words cover English and ten common languages, and a site
   that shows neither stays `unverified`. Pass `expect=` when it matters.
 - Without `key=`, the duplicate guard is per session and per page. It can't see side effects from another

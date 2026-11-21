@@ -1,0 +1,39 @@
+{
+  "config": {
+    "model": "claude-sonnet-5-5 via claude -p",
+    "effort": "medium",
+    "max_tokens": 8000,
+    "max_steps": 25,
+    "runs": 3,
+    "price": {
+      "input": 2.0,
+      "output": 10.0,
+      "cache_write_multiplier": 1.25,
+      "cache_read_multiplier": 0.1
+    },
+    "estimate_tokens_per_task": {
+      "screenshot": 60000,
+      "html": 80000,
+      "aria": 40000,
+      "playwright-mcp": 35000,
+      "lean": 10000,
+      "lean-escalate": 12000
+    }
+  },
+  "modes": [
+    "lean"
+  ],
+  "tasks": [
+    "live-todomvc",
+    "live-ti-iframe-editor",
+    "live-books-links",
+    "live-hn-links",
+    "live-quotes-scroll",
+    "live-ti-hover",
+    "live-books-travel"
+  ],
+  "runs": 1,
+  "cached": true,
+  "driver": "claude-cli",
+  "suite": "live"
+}

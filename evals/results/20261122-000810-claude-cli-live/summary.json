@@ -1,0 +1,69 @@
+{
+  "run": "20261122-000810-claude-cli-live",
+  "model": "claude-sonnet-5-5 via claude -p",
+  "tasks": [
+    "live-utp-classattr",
+    "live-utp-loaddelay",
+    "live-utp-ajax",
+    "live-utp-clientdelay",
+    "live-utp-textinput",
+    "live-utp-verifytext",
+    "live-utp-mouseover",
+    "live-utp-alerts",
+    "live-dq-textbox",
+    "live-dq-radio",
+    "live-dq-webtables",
+    "live-dq-select",
+    "live-dq-doubleclick",
+    "live-dq-modal",
+    "live-dq-dynamic",
+    "live-dq-date",
+    "live-dq-autocomplete",
+    "live-dq-slider",
+    "live-dq-tabs"
+  ],
+  "runs": 1,
+  "modes": {
+    "lean": {
+      "success": 17,
+      "attempts": 19,
+      "median_total_tokens": 13274,
+      "p95_total_tokens": 134753,
+      "median_wall_s": 24.4,
+      "p95_wall_s": 61.2,
+      "failure_categories": {
+        "wrong_answer": 2
+      },
+      "tasks_solved_every_run": 17,
+      "mean_turns": 5.42,
+      "mean_wall_s": 26.52,
+      "failures": [
+        {
+          "task": "live-utp-mouseover",
+          "run": 1,
+          "category": "wrong_answer",
+          "reason": "answer missing ['2']"
+        },
+        {
+          "task": "live-dq-doubleclick",
+          "run": 1,
+          "category": "wrong_answer",
+          "reason": "answer missing ['double click']"
+        }
+      ]
+    },
+    "playwright-mcp": {
+      "success": 19,
+      "attempts": 19,
+      "median_total_tokens": 34291,
+      "p95_total_tokens": 44288,
+      "median_wall_s": 17.9,
+      "p95_wall_s": 42.0,
+      "failure_categories": {},
+      "tasks_solved_every_run": 19,
+      "mean_turns": 4.42,
+      "mean_wall_s": 20.52,
+      "failures": []
+    }
+  }
+}

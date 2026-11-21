@@ -1,7 +1,7 @@
 # Project memory: Lean Agent Browser
 
 A living record of what this project is, what has been decided, and what is on this Mac.
-Update it whenever something important changes. Last updated: 2026-11-18 (v0.7.0: source-level audit cycle 002).
+Update it whenever something important changes. Last updated: 2026-11-22 (real-site hardening on `main` after v0.8.0; 3-run benchmark rerun).
 
 ## What we're building
 A token-lean browser for AI agents. Pages come back as compact text with numeric ids, and actions
@@ -13,6 +13,9 @@ with Chromium as the fallback. It is exposed as an MCP server, a CLI (`leanb`) a
 verified against evidence, safe recovery. Token efficiency stays an advantage; reliability is the promise.
 
 ## Key results (details in `evals/CHANGELOG.md`)
+- **2026-11-22, `main` after hardening, 100 tasks × 3 each:** Lean 300/300 (297 as run, harness key fault fixed),
+  median 13,505 tokens; Playwright MCP 300/300, 46,997. Lean +2.5% vs v0.4.0 (bigger schemas). Live suite of
+  51 real-site tasks: Lean 51/51 after the fixes (its first runs, 47/51, found the bugs fixed in CHANGELOG Unreleased).
 - **Fixture suite, 100 tasks** (v0.4.0, Claude Sonnet 5.5 via `claude -p`; `docs/benchmark.md`):
 
   | Mode | Success | Median tokens per task |
@@ -24,8 +27,8 @@ verified against evidence, safe recovery. Token efficiency stays an advantage; r
   limit); agent-browser must run sequentially and costs 0.15–1M tokens per task.
 - Older 18-task result (v0.2): Lean 54/54 at 11.6k, Playwright MCP 54/54 at 48.6k, agent-browser 17/18 at 146k.
 
-- **Tool-definition cost per request** (measured with `claude -p`): lean ~1.72k tokens since v0.8.0 added the
-  optional `key` (was ~1.55k on 2026-11-15, ~1.65k before `key`), Playwright MCP ~7.1k, agent-browser ~31.6k
+- **Tool-definition cost per request** (measured with `claude -p`): lean ~1.76k tokens on 2026-11-22 after `dblclick`
+  and the extract `url` hint (~1.72k after v0.8.0's `key`, ~1.65k before it, ~1.55k on 2026-11-15), Playwright MCP ~7.1k, agent-browser ~31.6k
   (those two measured 2026-11-15).
 - **Snapshot speed on Obscura:** GitHub repo page ~90 ms, after switching to `checkVisibility()`.
 - **Live suite** (5 public pages, 1 run each): Playwright MCP 5/5 with 134.6k tokens, lean 5/5 with
@@ -112,7 +115,7 @@ verified against evidence, safe recovery. Token efficiency stays an advantage; r
 ## What is installed where on this Mac
 | Path | What it is |
 |---|---|
-| `~/Desktop/lean/` | The repo (GitHub: Sanchit-hub/lean-agent-browser, private) |
+| `~/Desktop/lean/` | The repo (GitHub: Sanchit-hub/lean-agent-browser, public) |
 | `~/Desktop/lean/.venv/` | Python env (`pip install -e ".[dev]"`) |
 | `~/.lean-browser/bin/obscura`, `obscura-worker` | Obscura 0.2.7 (default since 2026-11-15; 0.2.6 hashes kept for rollback). Hashes are in `engine.py`; see `docs/engines.md` |
 | `~/.lean-browser/pw-browsers/` | Playwright Chromium (Chrome for Testing) |
@@ -152,7 +155,7 @@ cd ~/Desktop/lean && .venv/bin/leanb doctor && .venv/bin/python -m pytest -q
 
 **Next:**
 - outside developers test the release (the user will arrange it); tasks written by others and real-site
-  workflows, since both tools now hit 100% on our 100 tasks
+  workflows with sandbox accounts (the 51-task live suite is the first step)
 - automatic choice of when to use a screenshot
 - Stagehand and Browser Use in their own benchmark category (they need their own LLM keys)
-- publish to PyPI and make the repo public, both only when the user decides
+- publish to PyPI, only when the user decides (the repo is public since 2026-11-18)

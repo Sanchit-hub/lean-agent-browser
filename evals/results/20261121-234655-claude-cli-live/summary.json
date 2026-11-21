@@ -1,0 +1,29 @@
+{
+  "run": "20261121-234655-claude-cli-live",
+  "model": "claude-sonnet-5-5 via claude -p",
+  "tasks": [
+    "live-todomvc",
+    "live-ti-iframe-editor",
+    "live-books-links",
+    "live-hn-links",
+    "live-quotes-scroll",
+    "live-ti-hover",
+    "live-books-travel"
+  ],
+  "runs": 1,
+  "modes": {
+    "lean": {
+      "success": 7,
+      "attempts": 7,
+      "median_total_tokens": 13493,
+      "p95_total_tokens": 41089,
+      "median_wall_s": 25.0,
+      "p95_wall_s": 43.6,
+      "failure_categories": {},
+      "tasks_solved_every_run": 7,
+      "mean_turns": 5.71,
+      "mean_wall_s": 26.63,
+      "failures": []
+    }
+  }
+}

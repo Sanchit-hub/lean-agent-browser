@@ -1,4 +1,4 @@
-# Product truth (verified 2026-11-18)
+# Product truth (verified 2026-11-22)
 
 What exists today, checked against the code, the tests and CI rather than older notes or the README. Each
 public claim maps to where it is implemented and what proves it. Update this at the end of every cycle.
@@ -40,6 +40,7 @@ Status is one of: **verified** (a test or recorded run proves it), **partial** (
 | Version | 0.8.0 (`lean_browser.__version__`, the only version source; `pyproject.toml` reads it) | `leanb --version` |
 | Tags | `v0.5.0`, `v0.6.0`, `v0.7.0`, `v0.8.0` (`v0.8.0` on `6cd2f0d`; `pip install` from it gives `leanb 0.8.0`) | `git tag` |
 | GitHub Releases | none (held until the first-time user test) | `gh api .../releases` |
+| `main` after the tag | ahead of `v0.8.0` with the real-site hardening (`ef616ee`, `6f60a47`, docs), listed under Unreleased in `CHANGELOG.md`; not tagged | `git log v0.8.0..main` |
 | Before this baseline | `main` at `575c6bf` (v0.4.0); no git tags and no GitHub Releases existed | `git tag`, `gh api .../releases` |
 | Repository | public, Apache-2.0 | `gh repo view` |
 | PyPI | not published | |
@@ -79,6 +80,13 @@ Status is one of: **verified** (a test or recorded run proves it), **partial** (
 
 | Run | Result |
 |---|---|
+| CI (3 platforms), commit `6f60a47` (CI #61, last code change of the hardening) | green: macOS 15, Ubuntu 24.04 x86_64 and arm64 |
+| CI (3 platforms), commit `ef616ee` (CI #60, hardening round 1) | green |
+| Full suite, macOS arm64 (local), `6f60a47` | 675 passed, 5 skipped, 1 xfailed, 11 min 42 s |
+| Verification suite, 70 cases × 2 engines × 10 runs, `6f60a47` | 380 true verified, 1,020 correctly unverified: **0 false verified, 0 false unverified**; p50 1.11 s, p95 4.15 s |
+| Real-site canary, 10 pages × 2 engines (local, during the hardening) | 20/20 pass |
+| README route from GitHub, tag `v0.8.0`, throwaway HOME (2026-11-21) | `pipx install "git+...@v0.8.0"` in 1 min 16 s, `leanb setup --yes --client none` in 5 min 42 s (engine downloads), doctor 10/10 PASS. pipx itself was not installed on this Mac; the README links it. Claude Code registration was not repeated (it needs a signed-in CLI in that HOME) |
+| README second task (Hacker News titles + links) through `claude -p` | v0.8.0: correct but 25 turns, because snapshots carry no link addresses and the agent clicked every story; one domain wrong. After the `extract` url fix: 4 turns, all five URLs right |
 | Full suite, macOS arm64 (local), 2026-11-18 | 396 passed, 3 skipped (395 + 1 that failed only because the version was bumped mid-run; it passes on rerun), 5 min 52 s |
 | Clean-install test, macOS arm64 (local) | passed: wheel contents, venv path with a space, `setup --yes`, doctor 9/9 PASS, `doctor --json`, MCP round trip |
 | pipx install of the checkout (local, PIPX_HOME with a space) | `leanb --version` 0.5.0, doctor all PASS, install kind `pipx` |
@@ -101,6 +109,13 @@ Skipped tests are listed by `pytest -rs`. They are conditional: the real-Claude-
 `claude` isn't installed (CI), and platform-specific tests are skipped on the other platform.
 
 ## Benchmark evidence
+
+- `main` after hardening (`6f60a47`), Lean and Playwright MCP × 3 on all 100 fixture tasks (2026-11-22): Lean
+  300/300 (297/300 as run; three runs blocked by a duplicate key left by an earlier run, a harness fault, fixed
+  and rerun 9/9), median 13,505 tokens (+2.5% vs v0.4.0, a small real increase); Playwright MCP 300/300, median
+  46,997 (`evals/results/20261122-012443-claude-cli/`, `evals/results/20261122-015654-claude-cli/`).
+- Live suite, 51 real-site tasks, 1 run, answer-checked: Lean 51/51 after the fixes, median 12,699 tokens
+  (`evals/results/20261122-012035-claude-cli-live/`). The first runs (47/51) are what found the fixes.
 
 - v0.8.0, Lean × 1 on all 100 fixture tasks (2026-11-20): 100/100, median 13,409 tokens, p95 30,202; action
   statuses unchanged from v0.6.0 (`evals/results/20261120-032626-claude-cli/`, `docs/benchmark.md`).

@@ -1,0 +1,26 @@
+{
+  "run": "20261122-002129-claude-cli-live",
+  "model": "claude-sonnet-5-5 via claude -p",
+  "tasks": [
+    "live-dq-doubleclick",
+    "live-utp-mouseover",
+    "live-dq-slider",
+    "live-todomvc"
+  ],
+  "runs": 1,
+  "modes": {
+    "lean": {
+      "success": 4,
+      "attempts": 4,
+      "median_total_tokens": 11066.5,
+      "p95_total_tokens": 40849,
+      "median_wall_s": 20.55,
+      "p95_wall_s": 25.0,
+      "failure_categories": {},
+      "tasks_solved_every_run": 4,
+      "mean_turns": 6.25,
+      "mean_wall_s": 20.25,
+      "failures": []
+    }
+  }
+}
