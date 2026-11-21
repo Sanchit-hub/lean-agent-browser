@@ -64,6 +64,7 @@
     "action": {
      "enum": [
       "click",
+      "dblclick",
       "fill",
       "select",
       "check",

@@ -20,7 +20,7 @@ from lean_browser.session import OBSCURA_DIALOG_SHIM, ActionError, Session, erro
 from lean_browser.settle import SETTLE_INIT_JS
 from lean_browser.snapshot import wrap_untrusted
 
-ACTIONS = ["click", "fill", "select", "check", "uncheck", "clear", "press", "hover", "focus", "upload", "scroll",
+ACTIONS = ["click", "dblclick", "fill", "select", "check", "uncheck", "clear", "press", "hover", "focus", "upload", "scroll",
            "back", "forward", "reload", "wait_for", "tab", "dialog"]
 MODES = ["minimal", "actions", "read", "full"]
 

@@ -101,4 +101,49 @@ LIVE_TASKS += [
     Task("live-hn-links", "https://news.ycombinator.com/", "List the titles and full URLs of the first three stories. "
          "Every URL must start with http.", _has("http"), ("live", "read")),
 ]
+
+# Second hardening batch (2026-11-22): sites built as automation challenges. Client-side only; nothing is sent
+# to a real account.
+UTP = "http://uitestingplayground.com"
+DQ = "https://demoqa.com"
+LIVE_TASKS += [
+    Task("live-utp-classattr", UTP + "/classattr", "Click the blue (primary) button and report the text of the alert it shows.",
+         _has("primary button pressed"), ("live2", "dialog")),
+    Task("live-utp-loaddelay", UTP + "/", "Open the 'Load Delay' page, wait for its button, and report the button's label.",
+         _has("appearing after delay"), ("live2", "dynamic")),
+    Task("live-utp-ajax", UTP + "/ajax", "Click the button that triggers the AJAX request and report the text that appears "
+         "when the data arrives (it can take about 15 seconds).", _has("data loaded with ajax get request"), ("live2", "dynamic")),
+    Task("live-utp-clientdelay", UTP + "/clientdelay", "Click the button that starts the client-side calculation and report "
+         "the text that appears when it finishes (it can take about 15 seconds).", _has("data calculated on the client side"),
+         ("live2", "dynamic")),
+    Task("live-utp-textinput", UTP + "/textinput", "Type 'Lean Bot' into the text field, click the button, and report the "
+         "button's new label.", _has("lean bot"), ("live2", "form")),
+    Task("live-utp-verifytext", UTP + "/verifytext", "What does the welcome text on this page say?", _has("welcome username"),
+         ("live2", "read")),
+    Task("live-utp-mouseover", UTP + "/mouseover", "Click the 'Click me' link twice and report the click count the page shows.",
+         _has("2"), ("live2", "widget")),
+    Task("live-utp-alerts", UTP + "/alerts", "Click the 'Alert' button and report the alert's text.", _has("working day"),
+         ("live2", "dialog")),
+    Task("live-dq-textbox", DQ + "/text-box", "Fill Full Name 'Lean Tester' and Email 'lean@example.com', submit, and report "
+         "the name shown in the output below the form.", _has("lean tester"), ("live2", "form")),
+    Task("live-dq-radio", DQ + "/radio-button", "Select the 'Impressive' option and report the confirmation text.",
+         _has("impressive"), ("live2", "widget")),
+    Task("live-dq-webtables", DQ + "/webtables", "What is Cierra's salary in the table?", _has("10000"), ("live2", "read")),
+    Task("live-dq-select", DQ + "/select-menu", "In the 'Old Style Select Menu', choose 'Purple' and report the selected value.",
+         _has("purple"), ("live2", "widget")),
+    Task("live-dq-doubleclick", DQ + "/buttons", "Double-click the 'Double Click Me' button and report the message that appears.",
+         _has("double click"), ("live2", "widget")),
+    Task("live-dq-modal", DQ + "/modal-dialogs", "Open the small modal and report the sentence inside it.",
+         _has("small modal"), ("live2", "dialog")),
+    Task("live-dq-dynamic", DQ + "/dynamic-properties", "A button appears on this page after a few seconds. Report its label.",
+         _has("visible after 5 seconds"), ("live2", "dynamic")),
+    Task("live-dq-date", DQ + "/date-picker", "Set the 'Select Date' field to 01/15/2025 and report the value the field shows.",
+         _has("01/15/2025"), ("live2", "widget")),
+    Task("live-dq-autocomplete", DQ + "/auto-complete", "In the single-color autocomplete field, type 'Re' and pick 'Red' from "
+         "the suggestions. Report the value that is selected.", _has("red"), ("live2", "widget")),
+    Task("live-dq-slider", DQ + "/slider", "Set the slider to 70 and report the value shown next to it.", _has("70"),
+         ("live2", "widget")),
+    Task("live-dq-tabs", DQ + "/tabs", "Open the 'Origin' tab and report the first three words of its text.",
+         _has("contrary to popular"), ("live2", "widget")),
+]
 BY_ID = {t.id: t for t in LIVE_TASKS}

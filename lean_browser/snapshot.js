@@ -162,11 +162,14 @@
   }
 
   // ---------- roles ----------
+  // Inline pointer handlers mark an element as clickable even without href/role (an <a> with only onmouseenter)
+  const HANDLER_ATTRS = ['onclick', 'ondblclick', 'onmousedown', 'onmouseup', 'onpointerdown', 'onmouseenter', 'onmouseover'];
+  const hasHandler = el => HANDLER_ATTRS.some(a => el.hasAttribute(a) && el.getAttribute(a).trim());
   function roleOf(el) {
     const r = el.getAttribute('role');
     if (r && INTERACTIVE_ROLES.has(r)) return r;
     const tag = el.tagName;
-    if (tag === 'A') return el.hasAttribute('href') ? 'link' : null;
+    if (tag === 'A') return el.hasAttribute('href') || hasHandler(el) ? 'link' : null;
     if (tag === 'BUTTON') return 'button';
     if (tag === 'SELECT') return 'select';
     if (tag === 'TEXTAREA') return 'textbox';
@@ -181,7 +184,7 @@
       return 'textbox';
     }
     if (el.isContentEditable && el.getAttribute('contenteditable') !== null && el.getAttribute('contenteditable') !== 'false') return 'editor';
-    if (el.hasAttribute('onclick')) return 'clickable';
+    if (hasHandler(el) && tag !== 'BODY' && tag !== 'HTML') return 'clickable';
     if (el.getAttribute('tabindex') !== null && +el.getAttribute('tabindex') >= 0 && el.tagName !== 'DIV' && el.tagName !== 'SPAN') return 'clickable';
     return null;
   }
@@ -359,6 +362,7 @@
     return [...kids].filter(k => key(k) === best);
   }
   const INTERACTIVE_SEL = 'a[href],button,input:not([type=hidden]),select,textarea,summary,[contenteditable]:not([contenteditable=false]),[onclick],' +
+    '[ondblclick],[onmousedown],[onmouseup],[onpointerdown],[onmouseenter],[onmouseover],' +
     [...INTERACTIVE_ROLES].map(r => `[role=${r}]`).join(',');
   function itemEntry(child, frame) {
     let text = (child.innerText || '').replace(/\t/g, ' | ').replace(/\s*\n\s*/g, ' · ');

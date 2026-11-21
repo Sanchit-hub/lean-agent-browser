@@ -465,3 +465,38 @@ async def test_frames_obscura_cannot_drive_go_to_chromium(s):
         if s.engine == "obscura":
             assert f"engine: chromium (routed: {why})" in out, out
         assert "[frame:" in out, out
+
+
+async def test_dblclick_and_hover_replaced_link(request, base):
+    """Real-site hardening: no double-click action existed, an <a> with only onmouseenter was invisible, and a link
+    that the page replaces with a clone on hover could not be clicked."""
+    from lean_browser.tools import Config, LeanBrowser
+    import re as _re
+    for engine in ("chromium", "obscura"):
+        async with LeanBrowser(Config(prefer=engine, allow_private_network=True)) as b:
+            snap = await b.open(base + "/pointer.html")
+            btn = int(_re.search(r'(\d+): button "Double Click Me"', snap).group(1))
+            out = await b.act("dblclick", btn)
+            assert "status: verified" in out or "double click" in out.lower(), out
+            assert await b.session.cur.page.evaluate("document.getElementById('dblmsg').textContent") == "You have done a double click"
+            link = int(_re.search(r'(\d+): link "Click me"', snap).group(1))
+            for n in (1, 2):
+                out = await b.act("click", link)
+                assert f"clicked {n} times" in out, (engine, out)  # shown as text evidence, not as proof
+                assert "status: unverified" in out
+
+
+async def test_range_input_reaches_react_style_handlers(request, base):
+    """demoqa.com/slider: fill set the range to 70 and said verified, but React never saw it (value tracker), so the
+    page's own value box stayed at 25. Arrow keys on Obscura did not move a native range at all."""
+    from lean_browser.tools import Config, LeanBrowser
+    import re as _re
+    for engine in ("chromium", "obscura"):
+        async with LeanBrowser(Config(prefer=engine, allow_private_network=True)) as b:
+            snap = await b.open(base + "/range-react.html")
+            i = int(_re.search(r'(\d+): slider "Volume"', snap).group(1))
+            await b.act("fill", i, value="70")
+            page = b.session.cur.page
+            assert await page.evaluate("document.getElementById('out').value") == "70", engine
+            await b.act("press", i, value="ArrowRight")
+            assert await page.evaluate("document.getElementById('out').value") == "71", engine

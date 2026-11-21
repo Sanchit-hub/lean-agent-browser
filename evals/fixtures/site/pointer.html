@@ -1,0 +1,14 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Pointer</title></head><body>
+<main><h1>Pointer puzzles</h1>
+<p><button id="dbl">Double Click Me</button></p><p id="dblmsg"></p>
+<p><a class="link" onmouseenter="swap(this)">Click me</a></p>
+<p>The link above clicked <span id="count">0</span> times.</p>
+</main>
+<script>
+document.getElementById('dbl').addEventListener('dblclick', () => { document.getElementById('dblmsg').textContent = 'You have done a double click'; });
+function bump() { const c = document.getElementById('count'); c.textContent = +c.textContent + 1; }
+function swap(el) {  // hover replaces the link with a clone that counts clicks (stale-element puzzle)
+  const n = el.cloneNode(true); n.setAttribute('onmouseenter', ''); n.setAttribute('onclick', 'bump()');
+  el.parentNode.replaceChild(n, el);
+}
+</script></body></html>

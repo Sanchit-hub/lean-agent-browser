@@ -41,6 +41,17 @@ FIND_TEXT_JS = """(needle) => {
   return out;
 }"""
 
+RANGE_KEYS = {"ArrowRight", "ArrowUp", "ArrowLeft", "ArrowDown", "PageUp", "PageDown", "Home", "End"}
+# What a browser does to a focused <input type=range> on these keys, for engines that skip the default action.
+RANGE_KEY_JS = """(e, k) => { if (e.tagName !== 'INPUT' || e.type !== 'range') return;
+  const min = e.min === '' ? 0 : +e.min, max = e.max === '' ? 100 : +e.max, st = e.step === '' || e.step === 'any' ? 1 : +e.step;
+  const cur = +e.value, big = Math.max(st, (max - min) / 10);
+  const nv = { ArrowRight: cur + st, ArrowUp: cur + st, ArrowLeft: cur - st, ArrowDown: cur - st,
+               PageUp: cur + big, PageDown: cur - big, Home: min, End: max }[k];
+  const d = Object.getOwnPropertyDescriptor((e.ownerDocument.defaultView || window).HTMLInputElement.prototype, 'value');
+  const before = e.value; d.set.call(e, String(Math.min(max, Math.max(min, nv))));
+  if (e.value !== before) { e.dispatchEvent(new Event('input', {bubbles: true})); e.dispatchEvent(new Event('change', {bubbles: true})); } }"""
+
 RESOLVE_JS = """id => { const r = window.__lab && window.__lab.byId.get(id); const el = r && r.deref();
   return el && el.isConnected ? el : null; }"""
 
@@ -51,7 +62,11 @@ DOM_ACT_JS = r"""(el, [action, value]) => {
   const fire = (type, Ctor, extra) => el.dispatchEvent(new (Ctor || win.Event)(type, Object.assign({ bubbles: true, cancelable: true, composed: true }, extra || {})));
   const M = win.MouseEvent || win.Event, P = win.PointerEvent || M;
   const clickSeq = (t) => { t = t || el; if (t.scrollIntoView) t.scrollIntoView({ block: 'center' });
-    const f = (type, C) => t.dispatchEvent(new C(type, { bubbles: true, cancelable: true, composed: true }));
+    const f = (type, C, bub) => t.dispatchEvent(new C(type, { bubbles: bub !== false, cancelable: true, composed: true }));
+    // hover first, as a real pointer does; a page may replace the element on hover (stale-element pattern), and
+    // then the replacement, which keeps our id attribute when it is a clone, is what gets clicked
+    f('pointerover', P); f('pointerenter', P, false); f('mouseover', M); f('mouseenter', M, false);
+    if (!t.isConnected) { const id = t.getAttribute('data-lab-id'); const n = id && t.ownerDocument.querySelector(`[data-lab-id="${id}"]`); if (n) t = n; }
     f('pointerdown', P); f('mousedown', M); if (t.focus) t.focus(); f('pointerup', P); f('mouseup', M); t.click(); };
   const setVal = v => {
     const proto = el.tagName === 'TEXTAREA' ? win.HTMLTextAreaElement.prototype : el.tagName === 'SELECT' ? win.HTMLSelectElement.prototype : win.HTMLInputElement.prototype;
@@ -65,6 +80,8 @@ DOM_ACT_JS = r"""(el, [action, value]) => {
   const norm = s => (s || '').replace(/\s+/g, ' ').trim().toLowerCase();
   switch (action) {
     case 'click': clickSeq(); return 'ok';
+    case 'dblclick': clickSeq(); clickSeq(); { const t = el.isConnected ? el : (el.ownerDocument.querySelector(`[data-lab-id="${el.getAttribute('data-lab-id')}"]`) || el);
+      t.dispatchEvent(new M('dblclick', { bubbles: true, cancelable: true, composed: true, detail: 2 })); } return 'ok';
     case 'hover': fire('pointerover', P); fire('mouseover', M); fire('mouseenter', M, { bubbles: false }); return 'ok';
     case 'focus': if (el.focus) el.focus(); return 'ok';
     case 'fill': setVal(String(value)); return 'ok';
@@ -278,6 +295,19 @@ NEGATED_SUCCESS_RE = re.compile(
 # Visible text lines of the main content (and same-origin frames), leaving out navigation, header, footer, links,
 # buttons, labels and options: the place a page puts a plain "Payment declined." paragraph that headings and live
 # regions miss. Used to find error text that appeared with an action.
+# For short changed lines (a counter badge), the text of the block around them; longer lines stay as they are.
+TEXT_CONTEXT_JS = r"""(lines) => lines.map(t => {
+  if (t.length > 24 || !document.body) return t;
+  const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  for (let n = w.nextNode(); n; n = w.nextNode()) {
+    if (n.nodeValue.replace(/\s+/g, ' ').trim() !== t) continue;
+    const b = n.parentElement && n.parentElement.closest('p,li,td,th,dd,h1,h2,h3,h4,h5,h6,label,div');
+    const s = b ? (b.innerText || '').replace(/\s+/g, ' ').trim() : '';
+    return s && s.length <= 160 ? s : t;
+  }
+  return t;
+})"""
+
 PLAIN_LINES_JS = r"""() => {
   const SKIP = 'nav,header,footer,aside,a,button,label,option,select,textarea,script,style,noscript,template,[role=navigation],[role=banner],[role=contentinfo],[aria-hidden=true]';
   const out = new Set();
@@ -399,6 +429,7 @@ class TabState:
     pre_lines: set | None = None        # visible text lines before a submit-like action (pending detection)
     pre_expect: dict | None = None      # expect= state before the action (stale evidence doesn't count)
     pre_plain: set | None = None        # main-content text lines before a click / press / submit (PLAIN_LINES_JS)
+    new_plain: list = field(default_factory=list)  # main-content lines that appeared after it (shown, never proof)
     opens_tab: bool = False             # the clicked element is a link or form with a target (may open a tab)
 
     @property
@@ -614,13 +645,32 @@ class Session:
         return el
 
     async def _click(self, ts: TabState, el: ElementHandle):
+        double = getattr(self, "_double", False)
         if ts.tab.engine == "chromium":
             try:
-                await el.click(timeout=5000)
+                await (el.dblclick if double else el.click)(timeout=5000)
             except Exception as e:
+                # Hovering replaced the element with a clone (same id attribute): click the replacement once
+                if "intercepts pointer events" in str(e) or "not attached" in str(e):
+                    n = await self._replacement(el)
+                    if n:
+                        try:
+                            await (n.dblclick if double else n.click)(timeout=5000)
+                            return
+                        except Exception:  # noqa: BLE001 - report the original error below
+                            pass
                 raise ActionError(_short(e)) from e
         else:
-            await self._dom(el, "click")
+            await self._dom(el, "dblclick" if double else "click")
+
+    async def _replacement(self, el: ElementHandle) -> ElementHandle | None:
+        """The element that took this one's place: the original is gone and a connected element carries its id."""
+        try:
+            h = await el.evaluate_handle("""e => { if (e.isConnected) return null; const id = e.getAttribute('data-lab-id');
+              return id ? e.ownerDocument.querySelector(`[data-lab-id="${id}"]`) : null; }""")
+            return h.as_element()
+        except Exception:  # noqa: BLE001
+            return None
 
     async def _dom(self, el: ElementHandle, action: str, value=None):
         r = await el.evaluate(DOM_ACT_JS, [action, value])
@@ -712,6 +762,8 @@ class Session:
             if el is not None:
                 await (el.focus() if eng == "chromium" else self._dom(el, "focus"))
             await page.keyboard.press(str(value))
+            if eng != "chromium" and el is not None and str(value) in RANGE_KEYS:
+                await el.evaluate(RANGE_KEY_JS, str(value))  # Obscura sends the key but never moves a native range
         elif action == "upload":
             path = self._check_upload(str(value or ""))
             if eng != "chromium":
@@ -745,6 +797,10 @@ class Session:
                   dry_run: bool = False, key: str | None = None) -> str:
         action = action.lower().strip()
         self.last_outcome = None
+        # dblclick is a click for every safety, retry and evidence rule; only the dispatch differs
+        self._double = action == "dblclick"
+        if self._double:
+            action = "click"
         if dry_run and action in ("back", "forward", "reload", "tab", "dialog", "wait_for"):
             return json.dumps({"executed": False, "action": action, "value": value, "target": None,
                                "risk": "low", "retry_safety": "conditional" if action != "wait_for" else "safe",
@@ -841,6 +897,7 @@ class Session:
                 raise ActionError("blocked: the form's own validation stops this submit (a browser would too): "
                                   + "; ".join(bad[:4]) + ". Fill those fields, then submit again")
         ts.pre_lines = await self._page_lines(ts) if safety == "unsafe" else None
+        ts.new_plain = []
         ts.pre_plain = await self._plain_lines(ts) if action in ("click", "press") else None
         # For clicks and key presses, expect= is the evidence, so it has to be new. For field actions the field's
         # own state is the evidence, and expect= is an extra condition that just has to hold afterwards.
@@ -912,9 +969,17 @@ class Session:
         "Try again" / "Retry" controls, and a route or page path that names an error."""
         out = []
         if ts.pre_plain is not None:
-            for t in await self._plain_lines(ts) - ts.pre_plain:
+            new = await self._plain_lines(ts) - ts.pre_plain
+            for t in new:
                 if NEGATED_SUCCESS_RE.search(t) or (ERROR_RE.search(t) and not SUCCESS_RE.search(t)):
                     out.append(f'"{t[:80]}"')
+            if not out and new:
+                picked = sorted(new, key=len, reverse=True)[:2]
+                try:  # a bare "2" in a badge means little: show the sentence around it
+                    picked = await asyncio.wait_for(ts.page.evaluate(TEXT_CONTEXT_JS, picked), 2)
+                except Exception:  # noqa: BLE001 - keep the bare lines
+                    pass
+                ts.new_plain = picked
         if (page_changed or after.data.get("routeChanged")) and ERROR_PATH_RE.search(str(after.data.get("path") or "")):
             out.append(f"went to an error path: {after.data.get('path')}")
         return out[:3]
@@ -1021,7 +1086,10 @@ class Session:
             raise ActionError("a slider value must be a number") from None
         native = await el.evaluate("e => e.tagName === 'INPUT'")
         if native:
-            got = await el.evaluate("""(e, v) => { e.focus(); e.value = String(v);
+            # the native setter, as for text fields: React's value tracker ignores an input event after e.value = v
+            got = await el.evaluate("""(e, v) => { e.focus();
+                const d = Object.getOwnPropertyDescriptor((e.ownerDocument.defaultView || window).HTMLInputElement.prototype, 'value');
+                if (d && d.set) d.set.call(e, String(v)); else e.value = String(v);
                 e.dispatchEvent(new Event('input', {bubbles: true})); e.dispatchEvent(new Event('change', {bubbles: true}));
                 return +e.value; }""", want)
             if got != want:
@@ -1211,6 +1279,7 @@ class Session:
                     sig["errors"].append(n[:100])
             exp_res = await self._check_expect(ts, expect.get("expect"), after) if expect.get("expect") else None
             dialog = any(n.startswith("dialog ") for n in notes.splitlines())  # not "+tab opened" or other notes
+            sig["new_text"] = ts.new_plain if not changed else []
             status = self._status(expect, states, after, page_changed, changed, settled, dialog, sig, exp_res)
             if waited:
                 notes = (notes + "\n" if notes else "") + f"waited {waited:.1f}s for the page to finish processing"
@@ -1434,7 +1503,11 @@ class Session:
                     evidence.append(uncertain or "no visible change")
             else:
                 word = "verified" if changed else ("ambiguous" if uncertain else ("timed_out" if not settled else "unverified"))
-                evidence += strong or ["changes below" if changed else (uncertain or "no visible change")]
+                # Text outside the element view changed (a counter, a status line). Shown so the agent can judge,
+                # never counted as proof: clocks and rotating banners change text too.
+                quiet = 'page text changed: ' + '; '.join(f'"{t[:80]}"' for t in sig.get("new_text") or []) \
+                    if sig.get("new_text") else "no visible change"
+                evidence += strong or ["changes below" if changed else (uncertain or quiet)]
         if word == "verified" and not fields_ok:
             word = "unverified"
         if expect.get("risky"):

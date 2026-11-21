@@ -1,0 +1,13 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Range</title></head><body>
+<main><h1>Volume</h1>
+<input type="range" id="vol" min="0" max="100" value="25" aria-label="Volume"> <input id="out" value="25" readonly aria-label="Volume value">
+</main>
+<script>
+// Mimics React's value tracker: a value written through el.value is remembered, and an input event that finds the
+// same value is ignored. Only the native prototype setter (what a real user's input does) gets through.
+const el = document.getElementById('vol'), out = document.getElementById('out');
+const d = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+let tracked = el.value;
+Object.defineProperty(el, 'value', { configurable: true, get() { return d.get.call(this); }, set(v) { tracked = String(v); d.set.call(this, v); } });
+el.addEventListener('input', () => { if (el.value !== tracked) { tracked = el.value; out.value = el.value; } });
+</script></body></html>
