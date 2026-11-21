@@ -79,6 +79,7 @@ async def test_simple_page_stays_on_obscura(base):
     ("/comment.html", "contenteditable"),
     ("/xframe.html", "cross-origin-iframe"),
     ("/live.html", "websocket"),  # Obscura's WebSocket is a stub that fakes onopen
+    ("/late-widget.html", "srcdoc-iframe"),  # TinyMCE-style frame, visibility:hidden until its script runs
 ])
 async def test_feature_routing_to_chromium(base, path, why):
     async with BrowserManager(allow_private_network=True) as bm:

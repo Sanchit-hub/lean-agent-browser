@@ -1,4 +1,6 @@
 """Snapshot layer on both engines: format, filtering, collapse/expand/find, IDs, budgets, safety."""
+import re
+
 import pytest
 
 from evals.fixtures.server import serve
@@ -36,9 +38,13 @@ def body(text):
 
 
 async def test_login_format(bm, base):
-    tab, _, s, out = await snap(bm, base + "/login.html")
+    tab, sn, s, out = await snap(bm, base + "/login.html")
     assert tab.engine == bm.expected
-    assert out.splitlines()[0] == f"page: Log in | url: /login.html | engine: {bm.expected}"
+    # The first snapshot on a site names the site; later ones on the same site show only the path.
+    assert out.splitlines()[0] == f"page: Log in | url: {base}/login.html | engine: {bm.expected}"
+    await tab.page.goto(base + "/signup.html")
+    again = sn.render(await sn.take(tab.page, engine=tab.header))
+    assert again.splitlines()[0].startswith("page: Sign up | url: /signup.html")
     lines = body(out)
     assert lines[0] == "# Log in"
     assert lines[1].endswith(': textbox "Username"*')
@@ -183,3 +189,59 @@ async def test_big_page_performance(bm, base):
 
 def test_wrap_untrusted():
     assert wrap_untrusted("x") == '<page untrusted="true">\nx\n</page>'
+
+
+async def test_extract_url_field_returns_absolute_link_addresses(bm, base):
+    """Agents asked for "titles and links" used to click every link to learn its address."""
+    tab, _, _, _ = await snap(bm, base + "/links.html")
+    from lean_browser.session import EXTRACT_JS
+    table = await tab.page.evaluate(EXTRACT_JS, {"kind": "table", "fields": ["title", "url"]})
+    assert [r["url"] for r in table["rows"]] == ["https://example.org/a", base + "/local.html"]
+    lst = await tab.page.evaluate(EXTRACT_JS, {"kind": "list", "fields": ["url"]})
+    assert lst["items"][0]["fields"]["url"] == "https://example.org/one"
+    assert "url" not in lst["items"][0]["links"][0]  # once per item, not repeated per link
+    plain = await tab.page.evaluate(EXTRACT_JS, {"kind": "list"})
+    assert all("url" not in l for i in plain["items"] for l in i.get("links", []))  # hrefs only when asked
+    assert all("fields" not in i for i in plain["items"])
+
+
+async def test_transparent_native_inputs_are_listed_but_transparent_containers_stay_hidden(bm, base):
+    """TodoMVC-style lists hide the real checkbox with opacity:0 and style the label; they used to vanish."""
+    _, _, _, out = await snap(bm, base + "/custom-controls.html")
+    assert 'checkbox "Water plants" off' in out
+    assert 'checkbox "Feed cat" off' in out  # named by the unlinked label beside it
+    assert 'radiogroup "size" [Small]' in out
+    assert "Trap checkbox" not in out
+
+
+async def test_open_waits_for_scripts_added_after_load(request, base):
+    """TinyMCE-style editors load plugins with <script> tags after load; open() used to snapshot before they ran."""
+    from lean_browser.tools import Config, LeanBrowser
+    async with LeanBrowser(Config(prefer="chromium", allow_private_network=True)) as b:
+        out = await b.open(base + "/late-widget.html", mode="read")
+    assert "Plugin content ready" in out
+
+
+async def test_extract_prefers_content_lists_widens_within_and_uses_full_titles(bm, base):
+    """On a shop page extract picked the 6-item category sidebar over the products, within=<a book link> found
+    nothing, and titles came back cut ("A Light in the ..."): the agent then clicked every book."""
+    tab, _, _, out = await snap(bm, base + "/shelf.html")
+    from lean_browser.session import EXTRACT_JS
+    res = await tab.page.evaluate(EXTRACT_JS, {"kind": "auto", "fields": ["title", "url"]})
+    assert [i["fields"]["title"] for i in res["items"]] == ["A Light in the Attic", "Tipping the Velvet", "Soumission"]
+    assert res["items"][0]["fields"]["url"] == base + "/b/1"
+    link = int(re.search(r'(\d+): link "A Light in the', out).group(1))
+    inner = await tab.page.evaluate(EXTRACT_JS, {"kind": "auto", "within": link, "fields": ["title"]})
+    assert len(inner["items"]) == 3
+
+
+async def test_app_footer_inside_a_section_is_content_not_page_chrome(bm, base):
+    """TodoMVC keeps its "N items left" counter in a <footer> inside its <section>; read, find and the actions view
+    all dropped it as page chrome, so the agent fell back to a screenshot."""
+    from lean_browser.tools import Config, LeanBrowser
+    async with LeanBrowser(Config(prefer=bm.expected, allow_private_network=True)) as b:
+        actions = await b.open(base + "/todo-app.html")
+        assert 'link "Active"' in actions
+        assert "**2** items left" in await b.snapshot(mode="read")
+        found = await b.snapshot(find="items left")
+        assert "text: 2 items left" in found

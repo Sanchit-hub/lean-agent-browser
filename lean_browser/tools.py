@@ -44,7 +44,7 @@ TOOLS: list[dict] = [
                                                        "expect": {"type": "string"}, "dry_run": {"type": "boolean"},
                                                        "key": {"type": "string"}},
                       "required": ["fields"]}},
-    {"name": "extract", "description": "JSON table/list/form with source and row ids. fields: columns; new_only: skip seen rows.",
+    {"name": "extract", "description": "JSON table/list/form with source and row ids. fields: columns (url: link addresses); new_only: skip seen rows.",
      "input_schema": {"type": "object", "properties": {"kind": {"enum": ["auto", "table", "list", "form"]},
                                                        "within": {"type": "integer"},
                                                        "fields": {"type": "array", "items": {"type": "string"}},

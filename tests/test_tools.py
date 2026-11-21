@@ -196,5 +196,5 @@ async def test_concurrent_python_calls_do_not_mix_pages(base):
     from lean_browser.tools import Config, LeanBrowser
     async with LeanBrowser(Config(allow_private_network=True)) as lb:
         a, b = await asyncio.gather(lb.call("open", {"url": base + "/signup.html"}), lb.call("open", {"url": base + "/todo.html"}))
-    assert "url: /signup.html" in a[0] and "url: /todo.html" in b[0], (a[0][:200], b[0][:200])
+    assert "/signup.html | " in a[0] and "/todo.html | " in b[0], (a[0][:200], b[0][:200])
     assert "navigation failed" not in a[0] + b[0]

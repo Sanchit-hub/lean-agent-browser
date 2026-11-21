@@ -178,7 +178,7 @@ async def test_concurrent_calls_on_one_server_are_serialized(base):  # noqa: F81
     async with stdio_client(params) as (r, w), ClientSession(r, w) as s:
         await s.initialize()
         pages = {"/login.html": 'textbox "Username"', "/order.html": "Place order", "/signup.html": "Create account",
-                 "/todo.html": "url: /todo.html"}
+                 "/todo.html": "/todo.html | "}
         results = await asyncio.gather(*(s.call_tool("open", {"url": base + p}) for p in pages))
         for (p, marker), res in zip(pages.items(), results):
             text = res.content[0].text

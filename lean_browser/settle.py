@@ -1,6 +1,6 @@
 """Settle: after an action, wait until the page is quiet before taking the after-snapshot.
 
-Quiet = no DOM mutations for 300 ms AND no fetch/XHR in flight (requests running longer than
+Quiet = no DOM mutations for 300 ms AND no fetch/XHR (or script/stylesheet added after load) in flight (requests running longer than
 3 s are treated as long-polling and ignored), capped at 5 s. Navigation started by the action is
 awaited to domcontentloaded. Implemented in page JS (installed as an init script) so it behaves
 the same on Obscura and Chromium.
@@ -45,8 +45,21 @@ SETTLE_INIT_JS = r"""
   }
   const start = () => {
     try {
+      // Scripts and stylesheets a page adds after load (editors and widgets loading their plugins) count as
+      // requests in flight until they load or fail, like fetch/XHR.
+      const track = n => {
+        if (!(n.nodeName === 'SCRIPT' && n.src) && !(n.nodeName === 'LINK' && /stylesheet/i.test(n.rel || '') && n.href)) return;
+        const k = ++s.seq; s.pending.set(k, performance.now());
+        const done = () => { s.pending.delete(k); bump(); };
+        n.addEventListener('load', done, { once: true }); n.addEventListener('error', done, { once: true });
+      };
       new MutationObserver(recs => {
-        for (const r of recs) if (!(r.type === 'attributes' && r.attributeName === 'data-lab-id')) { bump(); return; }
+        let changed = false;
+        for (const r of recs) {
+          if (r.type === 'childList') for (const n of r.addedNodes) if (n.nodeName === 'SCRIPT' || n.nodeName === 'LINK') track(n);
+          if (!(r.type === 'attributes' && r.attributeName === 'data-lab-id')) changed = true;
+        }
+        if (changed) bump();
       }).observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
     } catch (e) {}
   };

@@ -174,6 +174,7 @@ class Snapshotter:
     _doc_id: str = ""
     _cursors: dict = field(default_factory=dict)
     _k: int = 0
+    _origin: str = ""
 
     async def take(self, page: Page, mode: str = "actions", engine: str = "", within: int | None = None) -> Snapshot:
         js_mode = "actions" if mode == "minimal" else mode  # minimal = actions data, rendered without text/headings
@@ -188,6 +189,9 @@ class Snapshotter:
         if within is not None:  # a scoped view never becomes the diff baseline or changes page-change tracking
             return Snapshot(data, engine, self.seq)
         self.seq += 1
+        origin = data.get("origin") or ""
+        data["showOrigin"] = bool(origin) and origin != self._origin  # the domain is shown once per site, not every step
+        self._origin = origin
         changed = bool(self._doc_id) and data["docId"] != self._doc_id
         self._doc_id = data["docId"]
         snap = Snapshot(data, engine, self.seq, changed)
@@ -197,7 +201,8 @@ class Snapshotter:
 
     def _header(self, snap: Snapshot) -> str:
         d = snap.data
-        parts = [f"page: {d['title']}", f"url: {d['path']}"]
+        where = (d.get("origin") or "") + d["path"] if d.get("showOrigin") else d["path"]
+        parts = [f"page: {d['title']}", f"url: {where}"]
         if d.get("within"):
             w = d["within"]
             parts.append(f"within {w['id']} ({w['tag']}{' ' + _q(w['label']) if w.get('label') else ''})")

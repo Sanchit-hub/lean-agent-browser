@@ -101,7 +101,9 @@ ROUTING_PROBE = """() => {
   if ([...document.querySelectorAll('iframe[src]')].some(f => { try { return vis(f) && new URL(f.src, location.href).origin !== here; } catch (e) { return false; } }))
     out.push('cross-origin-iframe');
   const frames = [...document.querySelectorAll('iframe')].filter(vis);
-  if (frames.some(f => f.hasAttribute('srcdoc'))) out.push('srcdoc-iframe');  // Obscura runs no scripts in srcdoc frames
+  // Obscura runs no scripts in srcdoc frames. Editors such as TinyMCE keep their srcdoc frame visibility:hidden
+  // until their script in it has run, which never happens there, so only display:none frames are skipped.
+  if ([...document.querySelectorAll('iframe[srcdoc]')].some(f => getComputedStyle(f).display !== 'none')) out.push('srcdoc-iframe');
   if (frames.some(f => { try { return !!(f.contentDocument && f.contentDocument.querySelector('iframe')); } catch (e) { return false; } }))
     out.push('nested-iframe');  // Obscura loads the inner frame but its elements can't be reached
   if (window.__leanWebSocket) out.push('websocket');  // set by WS_MARK_JS

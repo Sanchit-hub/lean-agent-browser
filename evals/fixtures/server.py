@@ -175,6 +175,11 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK:
                 self.state["hits"].append({"path": self.path})
             return self._json({"ok": True})
+        if path == "/slow-plugin.js":  # a widget plugin that loads slowly, then renders (late <script> settle test)
+            import time
+            time.sleep(min(float(q.get("delay", "1")), 5))
+            return self._send(200, b"document.getElementById('editor').textContent = 'Plugin content ready';",
+                              "application/javascript")
         if path == "/search.html":
             return self._send(200, render_search(q.get("q", "")))
         if path == "/orders.html":

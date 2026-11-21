@@ -140,7 +140,7 @@
   "name": "fill_form"
  },
  {
-  "description": "JSON table/list/form with source and row ids. fields: columns; new_only: skip seen rows.",
+  "description": "JSON table/list/form with source and row ids. fields: columns (url: link addresses); new_only: skip seen rows.",
   "input_schema": {
    "properties": {
     "fields": {

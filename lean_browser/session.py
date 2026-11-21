@@ -31,6 +31,15 @@ from lean_browser.settle import ARM_TIMERS_JS, DISARM_TIMERS_JS, PENDING_TIMERS_
 from lean_browser.snapshot import Snapshot, Snapshotter, SnapshotTimeout
 
 EXTRACT_JS = (Path(__file__).parent / "extract.js").read_text()
+# Visible text lines that contain the needle, for snapshot(find=) when no element matches (max 5, 200 chars each).
+FIND_TEXT_JS = """(needle) => {
+  const n = String(needle).toLowerCase(), out = [];
+  for (const line of (document.body ? document.body.innerText : '').split('\\n')) {
+    const t = line.replace(/\\s+/g, ' ').trim();
+    if (t && t.toLowerCase().includes(n) && !out.includes(t)) { out.push(t.length > 200 ? t.slice(0, 199) + '…' : t); if (out.length >= 5) break; }
+  }
+  return out;
+}"""
 
 RESOLVE_JS = """id => { const r = window.__lab && window.__lab.byId.get(id); const el = r && r.deref();
   return el && el.isConnected ? el : null; }"""
@@ -574,7 +583,15 @@ class Session:
             return ts.snapper.render(snap, budget=budget, skip_unchanged=False)
         snap = await self._take(ts, "actions" if (find or expand) else mode)  # modes: minimal|actions|read|full
         if find:
-            return ts.snapper.find(find)
+            out = ts.snapper.find(find)
+            if out.startswith("no match"):  # not an element: search the page's visible text (status lines, counters)
+                try:
+                    lines = await asyncio.wait_for(ts.page.evaluate(FIND_TEXT_JS, find), 2)
+                except Exception:  # noqa: BLE001 - best effort; the element search already answered
+                    lines = []
+                if lines:
+                    out = "\n".join(f"text: {l}" for l in lines) + "\n(text only, no element id; snapshot(mode=\"read\") shows it in context)"
+            return out
         if expand:
             return ts.snapper.render(snap, budget=budget or 2000, expand=expand)
         notes = self._drain(ts)

@@ -24,6 +24,14 @@
   const SKIP = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'HEAD', 'META', 'LINK', 'svg', 'SVG', 'PATH', 'BR', 'HR', 'OPTION', 'OPTGROUP', 'DATALIST']);
   const REGION_TAG = { NAV: 'nav', HEADER: 'header', FOOTER: 'footer', ASIDE: 'aside' };
   const REGION_ROLE = { navigation: 'nav', banner: 'header', contentinfo: 'footer', complementary: 'aside' };
+  // A <header>/<footer> inside an article, section, aside, nav or main belongs to that content (ARIA: it is not
+  // a banner/contentinfo landmark), e.g. TodoMVC's "2 items left" footer. Only page-level ones are chrome.
+  const SECTIONING = 'article,aside,main,nav,section,[role=article],[role=complementary],[role=main],[role=navigation],[role=region]';
+  const regionKind = el => {
+    const tag = el.tagName, k = REGION_TAG[tag] || REGION_ROLE[el.getAttribute('role')];
+    if (k && (tag === 'HEADER' || tag === 'FOOTER') && !el.getAttribute('role') && el.parentElement && el.parentElement.closest(SECTIONING)) return null;
+    return k;
+  };
   const INTERACTIVE_ROLES = new Set(['button', 'link', 'checkbox', 'radio', 'switch', 'tab', 'menuitem', 'menuitemcheckbox',
     'menuitemradio', 'option', 'combobox', 'textbox', 'searchbox', 'slider', 'spinbutton', 'listbox', 'treeitem']);
   const TEXT_ROLES = new Set(['alert', 'status', 'log', 'alertdialog']);
@@ -31,11 +39,15 @@
   // ---------- visibility (lazy, cached) ----------
   const vcache = new Map();
   const getWin = el => (el.ownerDocument && el.ownerDocument.defaultView) || W;
+  // A transparent checkbox, radio or file input of its own is the usual custom-control pattern (the styled
+  // label or box next to it is what people see), and screen readers read it. Only the element's own opacity is
+  // forgiven: anything inside a transparent container stays hidden.
+  const SEE_THROUGH = el => el.tagName === 'INPUT' && /^(checkbox|radio|file)$/i.test(el.type || '');
   function hiddenSelf(el) {
     if (el.hidden || el.getAttribute('aria-hidden') === 'true') return true;
     const cs = getWin(el).getComputedStyle(el);
-    return cs.display === 'none' || cs.visibility === 'hidden' || cs.visibility === 'collapse' || cs.opacity === '0'
-      || cs.contentVisibility === 'hidden';
+    return cs.display === 'none' || cs.visibility === 'hidden' || cs.visibility === 'collapse'
+      || (cs.opacity === '0' && !SEE_THROUGH(el)) || cs.contentVisibility === 'hidden';
   }
   function parentOf(el) {
     if (el.parentElement) return el.parentElement;
@@ -61,7 +73,9 @@
     if (!el || el.nodeType !== 1) return true;
     if (!HAS_CV) return visibleSlow(el);
     if (vcache.has(el)) return vcache.get(el);
-    let v = el.checkVisibility({ opacityProperty: true, visibilityProperty: true, contentVisibilityAuto: true })
+    let v = (SEE_THROUGH(el)
+      ? el.checkVisibility({ visibilityProperty: true, contentVisibilityAuto: true }) && (!el.parentElement || visible(el.parentElement))
+      : el.checkVisibility({ opacityProperty: true, visibilityProperty: true, contentVisibilityAuto: true }))
       && !el.closest('[hidden],[aria-hidden=true]');
     if (v && el.ownerDocument !== document) {  // inside an iframe: the frame element must be visible too
       const fe = el.ownerDocument.defaultView && el.ownerDocument.defaultView.frameElement;
@@ -122,6 +136,11 @@
       }
       const wrap = el.closest('label');
       if (wrap) { const t = textExcluding(wrap, el); if (t.trim()) return clip(t, 60); }
+      if (el.type === 'checkbox' || el.type === 'radio') {  // TodoMVC-style: an unlinked <label> right beside it
+        for (const sib of [el.nextElementSibling, el.previousElementSibling]) {
+          if (sib && sib.tagName === 'LABEL' && !sib.htmlFor) { const t = (sib.innerText || sib.textContent || '').trim(); if (t) return clip(t, 60); }
+        }
+      }
       if (el.getAttribute('placeholder')) return clip(el.getAttribute('placeholder'), 60);
       if (el.getAttribute('title')) return clip(el.getAttribute('title'), 60);
       if (tag === 'INPUT' && ['submit', 'button', 'reset'].includes(el.type)) return clip(el.value || el.type, 60);
@@ -393,7 +412,9 @@
   mark('dialog_banner');
   // ---------- read mode: main content as markdown ----------
   if (MODE === 'read') {
-    const scope = scopeEl || dialog || document.querySelector('main article,article,main,[role=main]') || document.body;
+    let scope = scopeEl || dialog || document.querySelector('main article,article,main,[role=main]') || document.body;
+    // An app that wraps a small <main> in its own section (TodoMVC: header, main list, footer counter) is read whole
+    if (!scopeEl && !dialog && scope.matches('main,[role=main]')) { const sec = scope.parentElement && scope.parentElement.closest('section,article'); if (sec) scope = sec; }
     const lines = [];
     const inline = el => {
       let s = '';
@@ -411,6 +432,7 @@
       }
       return s;
     };
+    const BLOCKISH = 'address,article,aside,blockquote,details,dialog,div,dl,fieldset,figure,footer,form,h1,h2,h3,h4,h5,h6,header,hr,iframe,li,main,nav,ol,p,pre,section,table,ul,img,svg,canvas,video,input,select,textarea,button';
     const block = el => {
       for (const n of el.childNodes) {  // bare text directly in a block (e.g. a JSON or plain-text response)
         if (n.nodeType === 3 && n.nodeValue.trim().length > 1) lines.push(clip(n.nodeValue, 3000));
@@ -418,7 +440,7 @@
       for (const c of el.children) {
         const tag = c.tagName;
         if (SKIP.has(tag) || c.hidden || c.getAttribute('aria-hidden') === 'true' || !visible(c)) continue;
-        if (REGION_TAG[tag] && !(scope.contains(c) && scope !== document.body)) continue;
+        if (regionKind(c) && REGION_TAG[tag] && !(scope.contains(c) && scope !== document.body)) continue;
         if (/^H[1-6]$/.test(tag)) { lines.push('#'.repeat(+tag[1]) + ' ' + clip(c.innerText, 120)); continue; }
         if (tag === 'P' || tag === 'BLOCKQUOTE' || tag === 'FIGCAPTION' || tag === 'DT' || tag === 'DD') {
           if (!onScreenSized(c) || tinyText(c)) continue;
@@ -440,6 +462,11 @@
         if (tag === 'PRE') { lines.push('```\n' + clip(c.innerText, 2000) + '\n```'); continue; }
         if (tag === 'IFRAME') { try { if (c.contentDocument && c.contentDocument.body) block(c.contentDocument.body); } catch (e) {} continue; }
         if (c.children.length === 0) { const t = (c.innerText || '').trim(); if (t && onScreenSized(c) && !tinyText(c)) lines.push(clip(t, 400)); continue; }
+        // only inline content inside (a counter like <span><strong>2</strong> items left</span>): one line, in order
+        if (!c.shadowRoot && !c.querySelector(BLOCKISH)) {
+          if (!onScreenSized(c) || tinyText(c)) continue;
+          const t = inline(c).replace(/[ \t]+/g, ' ').trim(); if (t) lines.push(clip(t, 1000)); continue;
+        }
         block(c);
         if (c.shadowRoot) block(c.shadowRoot);
       }
@@ -469,7 +496,7 @@
     if (SKIP.has(tag) || el.hidden || el.getAttribute('aria-hidden') === 'true') return;
     if (consumed.has(el)) return;
     // regions outside <main> collapse into one line
-    const rk = REGION_TAG[tag] || REGION_ROLE[el.getAttribute('role')];
+    const rk = regionKind(el);
     if (rk && !ctx.inGroup && !(mainEl && mainEl.contains(el)) && !ctx.inDialog) {
       if (!visible(el)) return;
       const g = { t: 'group', kind: rk, handle: handleFor(rk), label: groupLabel(el), items: [] };

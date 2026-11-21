@@ -11,6 +11,16 @@
     root = el.matches(CONTAINER_SEL) ? el : (el.closest(CONTAINER_SEL) || el);
   }
   const fields = (opts.fields || []).map(f => String(f).toLowerCase().replace(/\[.*?\]/g, '').trim()).filter(Boolean);
+  // url/link/href fields return the absolute address of the item's first http(s) link (opt-in: hrefs cost tokens)
+  const isUrlField = f => /^(url|urls|link|links|href|hrefs)$/.test(String(f).toLowerCase().replace(/[^a-z]/g, ''));
+  const wantUrl = fields.some(isUrlField);
+  const colFields = fields.filter(f => !isUrlField(f));
+  const hrefOf = a => { const h = a.href || ''; return /^https?:/i.test(h) ? (h.length > 300 ? h.slice(0, 300) : h) : null; };
+  // first visible http(s) link with text (skips icon-only links such as vote arrows), else the first at all
+  const firstUrl = el => { let any = null;
+    for (const a of el.querySelectorAll('a[href]')) { if (!vis(a)) continue; const h = hrefOf(a); if (!h) continue;
+      if ((a.innerText || a.getAttribute('aria-label') || '').trim()) return h; any = any || h; }
+    return any; };
   const wants = h => !fields.length || fields.some(f => String(h || '').toLowerCase().replace(/\[.*?\]/g, '').includes(f));
   const idsIn = el => [...el.querySelectorAll('[data-lab-id]')].map(e => +e.dataset.labId);
   const source = { url: location.href, title: document.title };
@@ -18,6 +28,7 @@
   // "Label: value" lines, then the item's heading for *name*/*title* fields. Never guesses beyond that.
   const normf = x => String(x || '').toLowerCase().replace(/[_\-]+/g, ' ').replace(/\s+/g, ' ').trim();
   function fieldValue(item, field) {
+    if (isUrlField(field)) { const u = firstUrl(item); return { value: u, conflict: false }; }
     const fn = normf(field), toks = fn.split(' ').filter(t => t.length > 1);
     const found = [];
     for (const el of item.querySelectorAll('[itemprop],[data-field],[class]')) {
@@ -31,7 +42,15 @@
       if (m && toks.some(t => normf(m[1]).split(' ').includes(t))) found.push(clip(m[2], 80));
     }
     if (!found.length && /\b(name|title)\b/.test(fn)) {
-      const h = item.querySelector('h1,h2,h3,h4,h5,a'); if (h && (h.innerText || '').trim()) found.push(clip(h.innerText, 80));
+      // first heading or link with text (an image link usually comes first in product cards)
+      const h = [...item.querySelectorAll('h1,h2,h3,h4,h5,a')].find(x => (x.innerText || '').trim());
+      if (h) {
+        // Shops often cut long titles on screen ("A Light in the ...") and keep the full one in the link's title
+        let v = h.innerText.trim(); const a = h.tagName === 'A' ? h : h.querySelector('a[title]');
+        const full = a && (a.getAttribute('title') || '').trim();
+        if (full && /(\.\.\.|…)\s*$/.test(v) && full.toLowerCase().startsWith(v.replace(/(\.\.\.|…)\s*$/, '').trim().toLowerCase())) v = full;
+        found.push(clip(v, 120));
+      }
     }
     const distinct = [...new Set(found.map(v => v.toLowerCase()))];
     return { value: found.length ? found[0] : null, conflict: distinct.length > 1, values: distinct.length > 1 ? [...new Set(found)] : undefined };
@@ -41,7 +60,8 @@
     if (cs.display === 'none' || cs.visibility === 'hidden') return false; const r = el.getBoundingClientRect(); return r.width > 0 || r.height > 0; };
   const idOf = el => (el.dataset && el.dataset.labId) ? +el.dataset.labId : undefined;
   const links = el => [...el.querySelectorAll('a[href],button')].filter(vis).slice(0, 5)
-    .map(a => { const o = { text: clip(a.innerText || a.getAttribute('aria-label'), 60) }; const i = idOf(a); if (i) o.id = i; return o; })
+    .map(a => { const o = { text: clip(a.innerText || a.getAttribute('aria-label'), 60) }; const i = idOf(a); if (i) o.id = i;
+      return o; })
     .filter(o => o.text);
 
   function table() {
@@ -55,7 +75,8 @@
     if (!rows.length) return null;
     let headers = null, body = rows;
     if (rows[0].querySelector('th')) { headers = cellsOf(rows[0]).map(c => clip(c.innerText, 60)); body = rows.slice(1); }
-    const keep = headers ? headers.map(h => wants(h)) : null;
+    const wantsCol = h => !colFields.length ? true : colFields.some(f => String(h || '').toLowerCase().replace(/\[.*?\]/g, '').includes(f));
+    const keep = headers ? headers.map(h => wantsCol(h)) : null;
     const data = body.slice(0, 200).map((r, ri) => {
       const cells = cellsOf(r).map(c => clip(c.innerText, 120));
       let row;
@@ -63,18 +84,26 @@
         row = {};
         headers.forEach((h, i) => { if (keep[i]) row[h || `col${i + 1}`] = cells[i]; });
       } else row = { cells };
+      if (wantUrl) row.url = firstUrl(r);
       row._row = ri + 1;
       const ids = idsIn(r); if (ids.length) row._ids = ids;
       return row;
     });
     const out = { kind: 'table', source, headers: headers && keep ? headers.filter((h, i) => keep[i]) : headers, rows: data, total_rows: body.length };
-    if (fields.length && !headers) out.note = 'table has no header row; fields ignored';
-    else if (fields.length && !keep.some(Boolean)) out.note = 'no column matched fields; columns: ' + headers.join(' | ');
+    if (colFields.length && !headers) out.note = 'table has no header row; fields ignored';
+    else if (colFields.length && !keep.some(Boolean)) out.note = 'no column matched fields; columns: ' + headers.join(' | ');
     return out;
   }
+  // Lists in page chrome (category sidebars, menus, footers) lose to lists in the content unless nothing else repeats.
+  const CHROME = 'nav,aside,header,footer,[role=navigation],[role=complementary],[role=banner],[role=contentinfo]';
+  const inChrome = el => { const c = el.closest(CHROME); return !!c && !c.contains(root) && c !== root; };
   function list() {
+    return listPick(false) || listPick(true);
+  }
+  function listPick(allowChrome) {
     let best = null, n = 0;
     for (const el of [root, ...root.querySelectorAll('ul,ol,tbody,div,section,[role=list],[role=feed]')]) {
+      if (!allowChrome && el !== root && inChrome(el)) continue;
       const kids = [...el.children].filter(vis);
       if (kids.length < 3) continue;
       const sig = new Map();
@@ -123,10 +152,21 @@
     }
     return out.length ? { kind: 'form', source, fields: out } : null;
   }
-  if (kind === 'table') return table() || { error: 'no visible table' };
-  if (kind === 'list') return list() || { error: 'no repeated list found' };
-  if (kind === 'form') return form() || { error: 'no form fields found' };
-  const t = table();
-  if (t && t.rows.length >= 2) return t;
-  return list() || form() || { error: 'nothing structured found; use snapshot(mode="read")' };
+  function run() {
+    if (kind === 'table') return table() || { error: 'no visible table' };
+    if (kind === 'list') return list() || { error: 'no repeated list found' };
+    if (kind === 'form') return form() || { error: 'no form fields found' };
+    const t = table();
+    if (t && t.rows.length >= 2) return t;
+    return list() || form() || { error: 'nothing structured found; use snapshot(mode="read")' };
+  }
+  const first = run();
+  if (!first.error || opts.within == null) return first;
+  // `within` named something inside one item (a book's link): widen to the nearest ancestor that holds the list
+  for (let hops = 0; hops < 6 && root.parentElement && root !== document.body; hops++) {
+    root = root.parentElement;
+    const res = run();
+    if (!res.error) return res;
+  }
+  return first;
 }
